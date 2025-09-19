@@ -1,0 +1,34 @@
+(()=>{function cleanHtml(html){const wrap=document.createElement('div');wrap.innerHTML=html;
+// 1) UL: remove inline style
+wrap.querySelectorAll('ul[style]').forEach(u=>u.removeAttribute('style'));
+// 2) CK bogus spans de listas
+wrap.querySelectorAll('span.ck-list-bogus-paragraph').forEach(s=>{const p=s.parentNode;while(s.firstChild)p.insertBefore(s.firstChild,s);s.remove()});
+// 3) Remover <span> mantendo conteúdo
+wrap.querySelectorAll('span').forEach(s=>{const p=s.parentNode;while(s.firstChild)p.insertBefore(s.firstChild,s);s.remove()});
+// 4) Remover atributos residuais ruidosos
+wrap.querySelectorAll('*').forEach(el=>{el.removeAttribute('style');el.removeAttribute('lang');el.removeAttribute('dir')});
+// 5) Normalizações específicas pedidas
+let out=wrap.innerHTML;
+out=out.replace(/<strong>\s*:\s*&nbsp;\s*<\/strong>/gi,'<strong>: </strong>');
+out=out.replace(/<\/strong>\s*<strong>/gi,'');
+out=out.replace(/<strong>\s*:\s*<\/strong>/gi,'<strong>: </strong>');
+out=out.replace(/&nbsp;/g,' ');
+out=out.replace(/\s+\</g,'<').replace(/\>\s+/g,'>');
+return out.trim()}
+
+async function processDrupalCKE5(){const inst=window.Drupal&&Drupal.CKEditor5Instances; if(!inst){return {total:0,changed:0,reason:'Drupal.CKEditor5Instances não encontrado'};}
+let total=0,changed=0;
+const entries=(typeof inst.entries==='function')?inst.entries():Object.entries(inst);
+for (const [key,val] of entries){total++;
+try{const editor=await Promise.resolve(val);
+if(!editor||typeof editor.getData!=='function'||typeof editor.setData!=='function') continue;
+const before=editor.getData(); const after=cleanHtml(before);
+if(before!==after){editor.setData(after);changed++;}}
+catch(e){console.warn('Falha ao processar editor',key,e)}}
+return {total,changed}}
+
+async function fallbackEditable(){const edits=[...document.querySelectorAll('.ck-editor__editable[contenteditable="true"]')];let changed=0;edits.forEach(ed=>{try{const b=ed.innerHTML;const a=cleanHtml(b);if(b!==a){ed.innerHTML=a;changed++;}}catch(e){}});return {total:edits.length,changed}}
+
+processDrupalCKE5().then(async r=>{if(r.total){alert('CKEditor5 (Drupal) processados: '+r.total+' | Alterados: '+r.changed);return;}
+const fb=await fallbackEditable();alert('Fallback (DOM) processados: '+fb.total+' | Alterados: '+fb.changed+(r.reason?(' | Obs: '+r.reason):''));});
+})();
