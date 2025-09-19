@@ -1,0 +1,192 @@
+(() => {
+  'use strict';
+
+  const APP_ID = 'schema-json-fill';
+  const Z = 2147483000;
+
+  const MAP = [
+    { path: '@type',                                name: 'metatags[schema_article][schema_article_type]',                      type: 'select' },
+    { path: 'mainEntityOfPage.@id',                 name: 'metatags[schema_article][schema_article_main_entity_of_page]'                     },
+    { path: 'headline',                             name: 'metatags[schema_article][schema_article_headline]'                                 },
+    { path: 'description',                          name: 'metatags[schema_article][schema_article_description]'                              },
+    { path: 'image.@type',                          name: 'metatags[schema_article][schema_article_image][@type]',              type: 'select' },
+    { path: 'image.url',                            name: 'metatags[schema_article][schema_article_image][url]'                               },
+    { path: 'datePublished',                        name: 'metatags[schema_article][schema_article_date_published]'                           },
+    { path: 'publisher.@type',                      name: 'metatags[schema_article][schema_article_publisher][@type]',         type: 'select' },
+    { path: 'publisher.name',                       name: 'metatags[schema_article][schema_article_publisher][name]'                          },
+    { path: 'publisher.logo.@type',                 name: 'metatags[schema_article][schema_article_publisher][logo][@type]',   type: 'select' },
+    { path: 'publisher.logo.url',                   name: 'metatags[schema_article][schema_article_publisher][logo][url]'                     },
+    // opcionais + fallbacks
+    { path: '@id',                                  name: 'metatags[schema_article][schema_article_id]'                                      },
+    { path: 'name',                                 name: 'metatags[schema_article][schema_article_name]'                                   },
+  ];
+
+  // ===== UI =====
+  document.getElementById(APP_ID)?.remove();
+  document.getElementById(APP_ID+'-style')?.remove();
+  const style = document.createElement('style');
+  style.id = APP_ID+'-style';
+  style.textContent = `
+    #${APP_ID}{position:fixed;inset:0;z-index:${Z};display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55)}
+    #${APP_ID} .box{width:min(900px,96vw);max-height:92vh;background:#0f1115;color:#eaeef3;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.6);display:flex;flex-direction:column;overflow:hidden}
+    #${APP_ID} .hd{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #23262d}
+    #${APP_ID} .hd h3{margin:0;font:600 16px/1.3 system-ui}
+    #${APP_ID} .bd{padding:12px;display:grid;gap:10px}
+    #${APP_ID} textarea{width:100%;min-height:300px;max-height:58vh;background:#0b0d11;color:#eaeef3;border:1px solid #23262d;border-radius:10px;padding:10px;font:13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;resize:vertical}
+    #${APP_ID} .ft{display:flex;gap:10px;padding:12px;border-top:1px solid #23262d;justify-content:flex-end}
+    #${APP_ID} button{appearance:none;border:1px solid #2e3138;background:#1a1d24;color:#eaeef3;border-radius:10px;padding:8px 12px;font:600 13px/1 system-ui;cursor:pointer}
+    #${APP_ID} button:hover{background:#23262d}
+    #${APP_ID} .muted{opacity:.75;font-size:12px}
+    #${APP_ID} .log{max-height:22vh;overflow:auto;border:1px dashed #2e3138;border-radius:10px;padding:8px;font:12px/1.4 ui-monospace;background:#0b0d11}
+    #${APP_ID} .ok{color:#9be28f} #${APP_ID} .warn{color:#f7d36e} #${APP_ID} .err{color:#ff8a8a}
+  `;
+  document.head.appendChild(style);
+
+  const wrap = document.createElement('div');
+  wrap.id = APP_ID;
+  wrap.innerHTML = `
+    <div class="box">
+      <div class="hd"><h3>Schema Article → Preencher pelo JSON-LD</h3><button id="${APP_ID}-close">Fechar</button></div>
+      <div class="bd">
+        <div class="muted">Cole o JSON puro <i>ou</i> o bloco <code>&lt;script type="application/ld+json"&gt;…&lt;/script&gt;</code>. Se vier de CSV/Excel com aspas duplas, eu corrijo.</div>
+        <textarea id="${APP_ID}-ta" placeholder='Cole aqui…'></textarea>
+        <div class="log" id="${APP_ID}-log"></div>
+      </div>
+      <div class="ft">
+        <button id="${APP_ID}-apply">Aplicar</button>
+        <button id="${APP_ID}-close2">Fechar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+
+  const $ = sel => document.querySelector(sel);
+  const logBox = $(`#${APP_ID}-log`);
+  const log = (msg, cls='') => { const p=document.createElement('div'); p.className=cls; p.textContent=msg; logBox.appendChild(p); logBox.scrollTop = logBox.scrollHeight; };
+  const close = () => wrap.remove();
+  $(`#${APP_ID}-close`).onclick = close;
+  $(`#${APP_ID}-close2`).onclick = close;
+
+  const sanitizeText = v => {
+    if (typeof v !== 'string') return v;
+    return v
+      .replace(/[\u201C\u201D\u201E\u201F\u2033]/g, '"')
+      .replace(/[\u2018\u2019\u2032]/g, "'")
+      .replace(/\s+/g, ' ')
+      .replace(/^\s*["“]|["”]\s*$/g, '')
+      .trim();
+  };
+
+  const getByPath = (obj, path) => {
+    if (!obj || !path) return undefined;
+    return path.split('.').reduce((acc, key) => acc && acc[key], obj);
+  };
+
+  // ---- Novo: parser robusto para JSON/HTML/CSV-quoted ----
+  const extractJsonText = (raw) => {
+    let txt = (raw || '').trim().replace(/^\uFEFF/, ''); // remove BOM
+    // Caso 1) CSV/Excel: conteúdo inteiro entre aspas e com "" dentro
+    if (txt.startsWith('"') && txt.endsWith('"')) {
+      const inner = txt.slice(1, -1);
+      // Se há muitas ocorrências de "", assume CSV quoting
+      if ((inner.match(/""/g) || []).length >= 1) {
+        txt = inner.replace(/""/g, '"');
+        log('Detectei conteúdo CSV/Excel com aspas duplicadas — normalizado.', 'ok');
+      }
+    }
+    // Caso 2) veio um bloco <script> (com ou sem aspas corrigidas acima)
+    if (/<script[^>]*application\/ld\+json/i.test(txt)) {
+      // Tenta extrair via regex primeiro
+      const m = txt.match(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/i);
+      if (m && m[1]) {
+        txt = m[1].trim();
+        log('Removi o wrapper <script type="application/ld+json">…</script>.', 'ok');
+      } else {
+        // fallback: DOMParser (se colaram HTML maior)
+        try {
+          const doc = new DOMParser().parseFromString(txt, 'text/html');
+          const el = doc.querySelector('script[type="application/ld+json"]');
+          if (el && el.textContent) {
+            txt = el.textContent.trim();
+            log('Extraí JSON-LD via DOMParser.', 'ok');
+          }
+        } catch {}
+      }
+    }
+    return txt.trim();
+  };
+
+  const setField = (name, value, kind) => {
+    const sel = `[name="${name.replace(/"/g, '\\"')}"]`;
+    const el = document.querySelector(sel);
+    if (!el) { log(`não encontrei ${name}`, 'warn'); return false; }
+    let v = sanitizeText(value);
+
+    if (kind === 'select' || el.tagName === 'SELECT') {
+      const opt = Array.from(el.options).find(o => o.value == v) ||
+                  Array.from(el.options).find(o => (o.textContent||'').trim() == v);
+      if (opt) { el.value = opt.value; }
+      else { el.value = v; }
+    } else {
+      el.value = (v == null ? '' : v);
+    }
+    ['input','change','blur'].forEach(t => el.dispatchEvent(new Event(t, {bubbles:true})));
+    log(`ok → ${name} = ${v}`, 'ok');
+    return true;
+  };
+
+  const apply = () => {
+    logBox.textContent = '';
+    let raw = document.getElementById(`${APP_ID}-ta`).value;
+    let jsonText = extractJsonText(raw);
+    let data;
+
+    try {
+      data = JSON.parse(jsonText);
+      log('JSON válido.', 'ok');
+    } catch (e) {
+      log('JSON inválido: ' + e.message, 'err');
+      // debug opcional: mostra começo do texto pra diagnosticar
+      log('Prévia do texto após normalização: ' + jsonText.slice(0,120) + (jsonText.length>120?'…':''), 'warn');
+      return;
+    }
+
+    // 1) Diretões
+    MAP.forEach(m => {
+      const val = getByPath(data, m.path);
+      if (val !== undefined && val !== null && `${val}`.trim() !== '') {
+        setField(m.name, val, m.type);
+      }
+    });
+
+    // 2) Fallbacks úteis
+    const idName = 'metatags[schema_article][schema_article_id]';
+    const idEl = document.querySelector(`[name="${idName}"]`);
+    if (idEl && !idEl.value) {
+      const mid = getByPath(data, '@id') || getByPath(data, 'mainEntityOfPage.@id');
+      if (mid) setField(idName, mid);
+    }
+
+    const nameName = 'metatags[schema_article][schema_article_name]';
+    const nameEl = document.querySelector(`[name="${nameName}"]`);
+    if (nameEl && !nameEl.value) {
+      const nm = getByPath(data, 'name') || getByPath(data, 'headline');
+      if (nm) setField(nameName, nm);
+    }
+
+    // 3) Normaliza @type esperados se vazios
+    [
+      { name: 'metatags[schema_article][schema_article_type]', expect: 'Article' },
+      { name: 'metatags[schema_article][schema_article_image][@type]', expect: 'ImageObject' },
+      { name: 'metatags[schema_article][schema_article_publisher][@type]', expect: 'Organization' },
+      { name: 'metatags[schema_article][schema_article_publisher][logo][@type]', expect: 'ImageObject' },
+    ].forEach(t => {
+      const el = document.querySelector(`[name="${t.name}"]`);
+      if (el && !el.value) setField(t.name, t.expect, 'select');
+    });
+
+    log('Concluído.', 'ok');
+  };
+
+  document.getElementById(`${APP_ID}-apply`).onclick = apply;
+})();
