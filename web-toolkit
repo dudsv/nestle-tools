@@ -1,61 +1,29 @@
 (() => {
-  // Evita dupla injeção
   if (window.__ftb_injected) return;
   window.__ftb_injected = true;
 
   const STORAGE_KEY = 'floating_toolbox.tools';
 
-  // Exemplos iniciais (ajuste/remoção livre)
   const DEFAULT_TOOLS = [
-    {
-      id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
-      label: 'HW',
-      title: 'HTML Washer',
-      color: '#7C3AED',
-      type: 'url', // 'url' | 'code'
-      url: 'https://raw.githubusercontent.com/dudsv/nestle-tools/refs/heads/main/html-washer',
-      code: ''
-    },
-    {
-      id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+1)),
-      label: 'EA',
-      title: 'Edit-All',
-      color: '#8B5CF6',
-      type: 'url',
-      url: 'https://raw.githubusercontent.com/dudsv/nestle-tools/refs/heads/main/edit-all',
-      code: ''
-    }
+    { id: (crypto.randomUUID?crypto.randomUUID():String(Date.now())),   label:'HW', title:'HTML Washer', color:'#7C3AED', type:'url', url:'https://raw.githubusercontent.com/dudsv/nestle-tools/refs/heads/main/html-washer', code:'' },
+    { id: (crypto.randomUUID?crypto.randomUUID():String(Date.now()+1)), label:'EA', title:'Edit-All',    color:'#8B5CF6', type:'url', url:'https://raw.githubusercontent.com/dudsv/nestle-tools/refs/heads/main/edit-all',      code:'' }
   ];
 
-  // ---- storage (localStorage) ----
   const loadTools = () => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr)) return arr;
-      }
-    } catch (_) {}
+    try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { const a = JSON.parse(raw); if (Array.isArray(a)) return a; } } catch(_) {}
     return DEFAULT_TOOLS.slice();
   };
-  const saveTools = (tools) => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(tools || [])); } catch (_) {}
-  };
+  const saveTools = (tools) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(tools||[])); } catch(_) {} };
 
-  // ---- UI root (Shadow DOM) ----
+  // host + shadow
   const host = document.createElement('div');
   host.id = 'ftb-root';
-  Object.assign(host.style, {
-    position: 'fixed',
-    right: '22px',
-    bottom: '22px',
-    zIndex: 2147483647
-  });
-  const shadow = host.attachShadow({ mode: 'open' });
+  Object.assign(host.style, { position:'fixed', right:'22px', bottom:'22px', zIndex:2147483647 });
+  const shadow = host.attachShadow({ mode:'open' });
   document.documentElement.appendChild(host);
 
-  const css = ''
-  + ':host{all:initial}'
+  const css =
+    ':host{all:initial}'
   + '.ftb{position:relative;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif}'
   + '.fab{width:64px;height:64px;border:0;border-radius:9999px;cursor:pointer;background:#6D28D9;color:#fff;display:grid;place-items:center;box-shadow:0 10px 26px rgba(0,0,0,.35),0 2px 6px rgba(0,0,0,.2);outline:none;transition:transform .15s}'
   + '.fab:active{transform:scale(.98)}'
@@ -66,26 +34,26 @@
   + '.mini[title]{position:relative}'
   + '.mini[title]:hover::after{content:attr(title);position:absolute;right:56px;white-space:nowrap;top:50%;transform:translateY(-50%);background:rgba(17,18,22,.92);color:#EAEAF3;border-radius:8px;padding:6px 9px;font:500 12px/1.2 system-ui}'
   + '.plus{background:#9333EA}'
+  + '.edit{background:#5B21B6}'
+  + '.stack[data-edit="1"] .mini:not(.edit):not(.plus){outline:2px dashed rgba(255,255,255,.35);outline-offset:2px}'
   + '.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:grid;place-items:center}'
-  // Popup 375×235 exatos
-  + '.popup{width:600px;height:400px;box-sizing:border-box;max-width:none;max-height:none;background:#0f1115;color:#eaeef3;border:1px solid #23262d;border-radius:16px;box-shadow:0 16px 50px rgba(0,0,0,.55);display:grid;grid-template-rows:auto 1fr auto;overflow:hidden}'
+  + '.popup{width:375px;height:235px;box-sizing:border-box;max-width:none;max-height:none;background:#0f1115;color:#eaeef3;border:1px solid #23262d;border-radius:16px;box-shadow:0 16px 50px rgba(0,0,0,.55);display:grid;grid-template-rows:auto 1fr auto;overflow:hidden}'
   + '.phd{padding:12px 14px;border-bottom:1px solid #23262d;display:flex;align-items:center;gap:10px}'
   + '.phd b{font:600 14px/1.2 system-ui}'
-  + '.pbd{padding:12px 14px;display:grid;gap:10px;grid-template-columns:1fr 180px;grid-template-rows:auto auto 1fr}'
+  + '.pbd{padding:12px 14px;display:grid;gap:10px;grid-template-columns:1fr minmax(140px,240px);grid-template-rows:auto auto 1fr}'
   + '.pbd label{display:grid;gap:6px;font:600 12px/1.2 system-ui;color:#b7bec8}'
-  + '.pbd input,.pbd textarea,.pbd select{background:#141821;border:1px solid #2a2f3a;color:#eaeef3;border-radius:10px;padding:8px 10px;font:500 13px/1.25 system-ui}'
+  + '.pbd input,.pbd textarea,.pbd select{background:#141821;border:1px solid #2a2f3a;color:#eaeef3;border-radius:10px;padding:8px 10px;font:500 13px/1.25 system-ui;box-sizing:border-box;width:100%}'
   + '.pbd textarea{resize:none;min-height:64px;grid-column:1/span 2}'
   + '.pft{padding:10px 14px;border-top:1px solid #23262d;display:flex;justify-content:flex-end;gap:8px}'
   + '.btn{background:#23262d;color:#eaeef3;border:0;border-radius:10px;padding:8px 12px;cursor:pointer;font:600 13px/1}'
-  + '.btn.primary{background:#7C3AED}';
+  + '.btn.primary{background:#7C3AED}'
+  + '.btn.danger{background:#B91C1C}';
 
-  const style = document.createElement('style');
-  style.textContent = css;
-  shadow.appendChild(style);
+  const style = document.createElement('style'); style.textContent = css; shadow.appendChild(style);
 
   const html =
     '<div class="ftb" data-open="0">'
-    + '<div class="stack" data-open="0" part="stack"></div>'
+    + '<div class="stack" data-open="0" data-edit="0"></div>'
     + '<button class="fab" aria-label="Toolbox" title="Toolbox">'
     +   '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
     +     '<circle cx="12" cy="12" r="10" fill="white" fill-opacity="0.18"></circle>'
@@ -94,50 +62,57 @@
     + '</button>'
     + '</div>';
 
-  const wrap = document.createElement('div');
-  wrap.innerHTML = html;
-  shadow.appendChild(wrap);
+  const wrap = document.createElement('div'); wrap.innerHTML = html; shadow.appendChild(wrap);
 
-  const state = { open: false, tools: loadTools() };
-  const $ = (sel, root) => (root || shadow).querySelector(sel);
+  const state = { open:false, edit:false, tools:loadTools() };
+  const $ = (s,r)=> (r||shadow).querySelector(s);
   const $stack = $('.stack');
-  const $fab = $('.fab');
+  const $fab   = $('.fab');
 
-  function setOpen(v) {
-    state.open = !!v;
-    $stack.setAttribute('data-open', state.open ? '1' : '0');
-  }
+  function setOpen(v){ state.open=!!v; $stack.setAttribute('data-open', state.open?'1':'0'); }
+  function setEdit(v){ state.edit=!!v; $stack.setAttribute('data-edit', state.edit?'1':'0'); }
 
-  function render() {
+  function render(){
     $stack.innerHTML = '';
 
-    // Botão de adicionar
+    // Botão EDIT (topo)
+    const ed = document.createElement('button');
+    ed.className = 'mini edit';
+    ed.title = state.edit ? 'Sair do modo Edição' : 'Editar/Remover botões';
+    ed.innerHTML = '⚙︎';
+    ed.style.fontSize = '18px';
+    ed.addEventListener('click', (e)=>{ e.preventDefault(); setEdit(!state.edit); ed.title = state.edit?'Sair do modo Edição':'Editar/Remover botões'; });
+    $stack.appendChild(ed);
+
+    // Botão +
     const plus = document.createElement('button');
-    plus.className = 'mini plus';
-    plus.title = 'Adicionar script';
-    plus.textContent = '+';
-    plus.addEventListener('click', openAddPopup);
+    plus.className='mini plus';
+    plus.title='Adicionar script';
+    plus.textContent='+';
+    plus.addEventListener('click', ()=> openToolPopup(null));
     $stack.appendChild(plus);
 
-    // Itens do usuário
-    state.tools.forEach((t) => {
+    // Tools
+    state.tools.forEach((t,idx)=>{
       const b = document.createElement('button');
-      b.className = 'mini';
+      b.className='mini';
       b.style.background = t.color || '#8B5CF6';
       b.title = t.title || t.label || 'Script';
-      b.textContent = (t.label || '??').slice(0, 2).toUpperCase();
-      b.addEventListener('click', (ev) => {
+      b.textContent = (t.label||'??').slice(0,2).toUpperCase();
+      b.addEventListener('click',(ev)=>{
         ev.preventDefault();
-        if (ev.altKey || ev.metaKey) {
-          // deletar
-          if (confirm('Remover “‘' + (t.title || t.label) + '” ?')) {
-            state.tools = state.tools.filter((x) => x.id !== t.id);
-            saveTools(state.tools);
-            render();
+        if (ev.altKey || ev.metaKey) { // remover rápido
+          if (confirm('Remover “'+(t.title||t.label)+'”?')) {
+            state.tools.splice(idx,1);
+            saveTools(state.tools); render();
           }
           return;
         }
-        runTool(t);
+        if (state.edit) { // editar
+          openToolPopup({ tool:t, index:idx });
+        } else {
+          runTool(t);
+        }
       });
       $stack.appendChild(b);
     });
@@ -145,91 +120,101 @@
     setOpen(state.open);
   }
 
-  $fab.addEventListener('click', () => setOpen(!state.open));
-  document.addEventListener('click', (e) => { if (!host.contains(e.target)) setOpen(false); }, { capture: true });
+  $fab.addEventListener('click', ()=> setOpen(!state.open));
+  document.addEventListener('click', (e)=>{ if(!host.contains(e.target)) setOpen(false); }, {capture:true});
 
-  // ---- Popup de adicionar ----
-  function openAddPopup() {
-    const overlay = document.createElement('div');
-    overlay.className = 'overlay';
-    overlay.innerHTML =
+  // Popup: adicionar/editar
+  function openToolPopup(ctx){
+    const isEdit = !!(ctx && ctx.tool);
+    const tool = isEdit ? ctx.tool : { id:(crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random())), label:'', title:'', color:'#7C3AED', type:'url', url:'', code:'' };
+
+    const ov = document.createElement('div');
+    ov.className='overlay';
+    ov.innerHTML =
       '<div class="popup" role="dialog" aria-modal="true">'
-      + '<div class="phd"><b>Nova Tool</b><span style="opacity:.6;font:600 12px/1;margin-left:6px">(2 letras)</span></div>'
+      + '<div class="phd"><b>'+(isEdit?'Editar Tool':'Nova Tool')+'</b><span style="opacity:.6;font:600 12px/1;margin-left:6px">(2 letras)</span></div>'
       + '<div class="pbd">'
-      +   '<label>Label (2 letras)<input id="ftb-label" maxlength="2" placeholder="HW"></label>'
-      +   '<label>Cor<input id="ftb-color" type="color" value="#7C3AED"></label>'
-      +   '<label>Título<input id="ftb-title" placeholder="HTML Washer"></label>'
-      +   '<label>Tipo<select id="ftb-type"><option value="url" selected>URL (fetch & eval)</option><option value="code">Código inline</option></select></label>'
+      +   '<label>Label (2 letras)<input id="ftb-label" maxlength="2" value="'+(tool.label||'')+'" placeholder="HW"></label>'
+      +   '<label>Cor<input id="ftb-color" type="color" value="'+(tool.color||'#7C3AED')+'"></label>'
+      +   '<label>Título<input id="ftb-title" value="'+(tool.title||'')+'" placeholder="HTML Washer"></label>'
+      +   '<label>Tipo<select id="ftb-type"><option value="url">URL (fetch & eval)</option><option value="code">Código inline</option></select></label>'
       +   '<label style="grid-column:1/-1">URL ou Código<textarea id="ftb-payload" placeholder="https://raw.githubusercontent.com/.../script.js"></textarea></label>'
       + '</div>'
-      + '<div class="pft"><button class="btn" id="ftb-cancel">Cancelar</button><button class="btn primary" id="ftb-add">Adicionar</button></div>'
+      + '<div class="pft">'
+      +   (isEdit?'<button class="btn danger" id="ftb-del">Excluir</button>':'')
+      +   '<button class="btn" id="ftb-cancel">Cancelar</button>'
+      +   '<button class="btn primary" id="ftb-save">'+(isEdit?'Salvar':'Adicionar')+'</button>'
+      + '</div>'
       + '</div>';
 
-    shadow.appendChild(overlay);
+    shadow.appendChild(ov);
 
-    const $L = overlay.querySelector('#ftb-label');
-    const $T = overlay.querySelector('#ftb-title');
-    const $C = overlay.querySelector('#ftb-color');
-    const $Y = overlay.querySelector('#ftb-type');
-    const $P = overlay.querySelector('#ftb-payload');
+    const $L = ov.querySelector('#ftb-label');
+    const $T = ov.querySelector('#ftb-title');
+    const $C = ov.querySelector('#ftb-color');
+    const $Y = ov.querySelector('#ftb-type');
+    const $P = ov.querySelector('#ftb-payload');
 
-    function close() { overlay.remove(); }
-    overlay.querySelector('#ftb-cancel').addEventListener('click', close);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    // set tipo + payload
+    $Y.value = tool.type || 'url';
+    $P.value = (tool.type==='url' ? (tool.url||'') : (tool.code||''));
 
-    overlay.querySelector('#ftb-add').addEventListener('click', () => {
+    function close(){ ov.remove(); }
+    ov.querySelector('#ftb-cancel').addEventListener('click', close);
+    ov.addEventListener('click', (e)=>{ if(e.target===ov) close(); });
+
+    if (isEdit) {
+      ov.querySelector('#ftb-del').addEventListener('click', ()=>{
+        if (confirm('Excluir “'+(tool.title||tool.label)+'”?')) {
+          state.tools.splice(ctx.index,1);
+          saveTools(state.tools); render(); close();
+        }
+      });
+    }
+
+    ov.querySelector('#ftb-save').addEventListener('click', ()=>{
       const t = {
-        id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random())),
-        label: (($L.value || '??').slice(0, 2)).toUpperCase(),
+        id: tool.id,
+        label: (($L.value||'??').slice(0,2)).toUpperCase(),
         title: $T.value || $L.value || 'Tool',
         color: $C.value || '#8B5CF6',
         type: $Y.value,
-        url: ($Y.value === 'url' ? ($P.value || '').trim() : ''),
-        code: ($Y.value === 'code' ? $P.value : '')
+        url: ($Y.value==='url' ? ($P.value||'').trim() : ''),
+        code: ($Y.value==='code' ? $P.value : '')
       };
 
-      if (t.type === 'url') {
-        try {
-          const u = new URL(t.url);
-          if (u.protocol !== 'http:' && u.protocol !== 'https:') { alert('Informe uma URL http(s) válida.'); return; }
-        } catch (e) { alert('Informe uma URL válida.'); return; }
+      if (t.type==='url') {
+        try { const u=new URL(t.url); if(u.protocol!=='http:'&&u.protocol!=='https:'){ alert('Informe uma URL http(s) válida.'); return; } }
+        catch(e){ alert('Informe uma URL válida.'); return; }
       }
-      if (t.type === 'code' && (!t.code || !t.code.trim())) { alert('Cole o código.'); return; }
+      if (t.type==='code' && (!t.code||!t.code.trim())) { alert('Cole o código.'); return; }
 
-      state.tools.unshift(t);
-      saveTools(state.tools);
-      render();
-      close();
+      if (isEdit) state.tools[ctx.index] = t; else state.tools.unshift(t);
+      saveTools(state.tools); render(); close();
     });
   }
 
-  // ---- executor ----
-  function execCode(code) {
+  // executor
+  function execCode(code){
     if (!code) throw new Error('Script vazio');
-    // Aceita bookmarklet "javascript:..."
-    if (code.slice(0, 11).toLowerCase() === 'javascript:') {
+    if (code.slice(0,11).toLowerCase()==='javascript:') {
       code = code.slice(11);
-      while (code[0] === ' ' || code[0] === '\t' || code[0] === '\n') code = code.slice(1);
+      while (code[0]===' '||code[0]==='\t'||code[0]==='\n') code = code.slice(1);
     }
-    (0, eval)(code); // executa no contexto do content-script
+    (0,eval)(code);
   }
-
-  function runTool(tool) {
-    try {
-      if (tool.type === 'url') {
-        fetch(tool.url, { cache: 'no-store' })
-          .then((r) => r.text())
-          .then((txt) => execCode(txt))
-          .catch((err) => { alert('Erro ao baixar: ' + err); });
+  function runTool(tool){
+    try{
+      if (tool.type==='url') {
+        fetch(tool.url,{cache:'no-store'}).then(r=>r.text()).then(txt=>execCode(txt)).catch(err=>alert('Erro ao baixar: '+err));
       } else {
-        execCode(tool.code || '');
+        execCode(tool.code||'');
       }
-    } catch (err) {
-      alert('Erro ao executar: ' + (err && err.message ? err.message : err));
-      try { console.error('[FloatingToolbox] runTool error', err); } catch (_) {}
+    } catch(err){
+      alert('Erro ao executar: '+(err&&err.message?err.message:err));
+      try{ console.error('[FloatingToolbox] runTool error', err); }catch(_){}
     }
   }
 
-  // init
   render();
 })();
