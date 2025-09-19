@@ -37,10 +37,10 @@
   + '.edit{background:#5B21B6}'
   + '.stack[data-edit="1"] .mini:not(.edit):not(.plus){outline:2px dashed rgba(255,255,255,.35);outline-offset:2px}'
   + '.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:grid;place-items:center}'
-  + '.popup{width:375px;height:235px;box-sizing:border-box;max-width:none;max-height:none;background:#0f1115;color:#eaeef3;border:1px solid #23262d;border-radius:16px;box-shadow:0 16px 50px rgba(0,0,0,.55);display:grid;grid-template-rows:auto 1fr auto;overflow:hidden}'
+  + '.popup{width:600px;height:400px;box-sizing:border-box;max-width:none;max-height:none;background:#0f1115;color:#eaeef3;border:1px solid #23262d;border-radius:16px;box-shadow:0 16px 50px rgba(0,0,0,.55);display:grid;grid-template-rows:auto 1fr auto;overflow:hidden}'
   + '.phd{padding:12px 14px;border-bottom:1px solid #23262d;display:flex;align-items:center;gap:10px}'
   + '.phd b{font:600 14px/1.2 system-ui}'
-  + '.pbd{padding:12px 14px;display:grid;gap:10px;grid-template-columns:1fr minmax(140px,240px);grid-template-rows:auto auto 1fr}'
+  + '.pbd{padding:12px 14px;display:grid;gap:10px;grid-template-columns:1fr 180px;grid-template-rows:auto auto 1fr}'
   + '.pbd label{display:grid;gap:6px;font:600 12px/1.2 system-ui;color:#b7bec8}'
   + '.pbd input,.pbd textarea,.pbd select{background:#141821;border:1px solid #2a2f3a;color:#eaeef3;border-radius:10px;padding:8px 10px;font:500 13px/1.25 system-ui;box-sizing:border-box;width:100%}'
   + '.pbd textarea{resize:none;min-height:64px;grid-column:1/span 2}'
@@ -79,7 +79,7 @@
     const ed = document.createElement('button');
     ed.className = 'mini edit';
     ed.title = state.edit ? 'Sair do modo Edição' : 'Editar/Remover botões';
-    ed.innerHTML = '⚙︎';
+    ed.innerHTML = '✎';
     ed.style.fontSize = '18px';
     ed.addEventListener('click', (e)=>{ e.preventDefault(); setEdit(!state.edit); ed.title = state.edit?'Sair do modo Edição':'Editar/Remover botões'; });
     $stack.appendChild(ed);
