@@ -26,19 +26,29 @@
 
     let out = wrap.innerHTML;
 
-    // Correções específicas
+    // Correções específicas anteriores
     out = out.replace(/<strong>\s*:\s*&nbsp;\s*<\/strong>/gi, '<strong>: </strong>');
     out = out.replace(/<\/strong>\s*<strong>/gi, '');
     out = out.replace(/<strong>\s*:\s*<\/strong>/gi, '<strong>: </strong>');
     out = out.replace(/&nbsp;/g, ' ');
 
-    // === Regras de espaçamento ===
-    // 1. Texto grudado ANTES de uma tag (qualquer, não só strong)
-    out = out.replace(/([^\s<])</g, '$1 <');
-    // 2. Texto grudado DEPOIS de uma tag inline de fechamento
-    out = out.replace(/>([^\s>.,;:!?<])/g, '> $1');
+    // ====== Espaçamento apenas para tags inline ======
+    // conj. de tags inline que vamos tratar
+    const inline = '(a|strong|em|b|i|u|sup|sub|code|span)';
 
-    // OBS: evita quebrar antes de pontuação ou outra tag
+    // (A) Remover espaço indevido logo após apóstrofo francês antes de tag inline: l’ <strong> → l’<strong>
+    out = out.replace(new RegExp("([’'])\\s+<" + inline + "\\b", "gi"), "$1<$2");
+
+    // (B) Adicionar espaço antes de tag inline se vier colada a letra/número: ...chiots<a> → ...chiots <a>
+    out = out.replace(new RegExp("([A-Za-zÀ-ÖØ-öø-ÿ0-9])<" + inline + "\\b", "g"), "$1 <$2");
+
+    // (C) Adicionar espaço depois de fechar tag inline se vier colada a letra/número: </a>sensibles → </a> sensibles
+    out = out.replace(new RegExp("</" + inline + ">(?=[A-Za-zÀ-ÖØ-öø-ÿ0-9])", "g"), "</$1> ");
+
+    // (D) Evitar espaço antes de pontuação comum quando bold/link termina antes dela (opcional, suave)
+    // </strong> :  → </strong> :  (NBSP fina francesa seria o ideal; aqui só evita inserir espaço a mais)
+    // Se quiser a NBSP fina, troque por '\u00A0'
+    out = out.replace(/<\/(strong|em|b|i|u)>\s+([:;!?])/g, "</$1>\u00A0$2");
 
     return out.trim();
   }
