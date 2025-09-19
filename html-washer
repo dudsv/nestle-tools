@@ -24,24 +24,22 @@
       el.removeAttribute('dir');
     });
 
-    // 5) Normalizações específicas pedidas (sem cortar espaços perto de tags)
     let out = wrap.innerHTML;
 
-    // Correções de "strong :"
+    // Correções específicas
     out = out.replace(/<strong>\s*:\s*&nbsp;\s*<\/strong>/gi, '<strong>: </strong>');
-    out = out.replace(/<\/strong>\s*<strong>/gi, ''); // junta strong contíguos
+    out = out.replace(/<\/strong>\s*<strong>/gi, '');
     out = out.replace(/<strong>\s*:\s*<\/strong>/gi, '<strong>: </strong>');
-
-    // &nbsp; vira espaço normal
     out = out.replace(/&nbsp;/g, ' ');
 
-    // >>> Manter espaços e só ajustar quando grudou sem espaço <<<
-    // Adiciona espaço ANTES de <strong> se vier grudado a um char (letra/número)
-    out = out.replace(/([^\s<])<strong>/g, '$1 <strong>');
-    // Adiciona espaço DEPOIS de </strong> se vier grudado a um char (letra/número)
-    out = out.replace(/<\/strong>([^\s>.,;:!?])/g, '</strong> $1');
+    // === Regras de espaçamento ===
+    // 1. Texto grudado ANTES de uma tag (qualquer, não só strong)
+    out = out.replace(/([^\s<])</g, '$1 <');
+    // 2. Texto grudado DEPOIS de uma tag inline de fechamento
+    out = out.replace(/>([^\s>.,;:!?<])/g, '> $1');
 
-    // Trim só nas bordas do HTML, não ao redor de tags internas
+    // OBS: evita quebrar antes de pontuação ou outra tag
+
     return out.trim();
   }
 
