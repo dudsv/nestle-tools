@@ -197,146 +197,107 @@
 
   /* ---------- Características (checkboxes) ---------- */
  const markCaracteristicas=(block)=>{
-  // normalização agressiva (ignora acentos, pontuação, bullets, múltiplos espaços)
+  // normalização extremamente agressiva
   const norm = (s)=> (s||'').toString()
-    .replace(/^[\s\-–—•]+/g,'')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-    .replace(/[^\p{L}\p{N}\/ ]+/gu,' ')
+    .replace(/[\u00A0\u202F]/g,' ')                // NBSP e NNBSP -> space
+    .replace(/[“”„»«]/g,'"').replace(/[’‘´`]/g,"'") // aspas/apos trocadas
+    .replace(/^[\s\-–—•]+/g,'')                    // bullets/traços no início
+    .replace(/[-–—]{2,}/g,' ')                     // "--", "—" repetidos
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')// tira acentos
+    .replace(/[^\p{L}\p{N}\/ ]+/gu,' ')            // só letras/números/'/'/espaço
     .replace(/\s+/g,' ')
     .trim()
     .toLowerCase();
 
   const tok = (s)=> norm(s).split(' ').filter(w=>w.length>=2);
-  const cover=(A,B)=>{ if(!A.length||!B.length) return 0; const SB=new Set(B); let k=0; A.forEach(w=>{ if(SB.has(w)) k++ }); return k/Math.max(1,A.length) };
+  const overlap=(A,B)=>{ if(!A.length||!B.length) return 0; const SB=new Set(B); let k=0; A.forEach(w=>{ if(SB.has(w)) k++ }); return k/Math.max(1,A.length) };
 
-  // score: exato > contém > fuzzy (overlap)
+  // score: exato > contém > fuzzy; em empate, prefere label mais longo
   const score=(lineKey,labelKey)=>{
     if(!lineKey || !labelKey) return 0;
-    if(lineKey===labelKey) return 1.0001;                  // exato (prioridade máxima)
-    if(lineKey.includes(labelKey) || labelKey.includes(lineKey)) return 0.98; // contém
-    return cover(tok(lineKey), tok(labelKey));             // fuzzy
+    if(lineKey===labelKey) return 1.0001;
+    if(lineKey.includes(labelKey) || labelKey.includes(lineKey)) return 0.98;
+    return overlap(tok(lineKey), tok(labelKey));
   };
 
-  // encontra label para um input
   const findLabel = (inp)=>{
     if(inp.id){
       const byFor = document.querySelector(`label[for="${CSS.escape(inp.id)}"]`);
       if(byFor) return byFor;
     }
-    // fallback: label ancestral
     return inp.closest('label') || inp.parentElement?.querySelector('label') || null;
   };
 
-  // coleta todos os inputs checkbox/radio
-  const inputs = Array.from(document.querySelectorAll('input[type="checkbox"], input[type="radio"]'))
+  // coleta opções (inclusive as já checadas)
+  const inputs = Array.from(document.querySelectorAll('#edit-field-nppe-bs-characteristic input[type="checkbox"], #edit-field-nppe-bs-characteristic input[type="radio"]'))
     .filter(i=>!i.disabled);
 
-  // monta lista de opções e grupos
-  const options = []; // {input, key, raw, type, group}
-  const radioGroups = new Map(); // name -> inputs[]
-  const checkboxGroups = new Map(); // groupId -> inputs[] (só p/ eventual uncheck por "grupo visual")
-
-  // group id incremental para checkboxes (baseado no fieldset mais próximo)
-  let cbGidSeq = 0;
-  const getCbGroup = (inp)=>{
-    const fs = inp.closest('fieldset');
-    if(fs){
-      if(!fs.__gid_cb){ fs.__gid_cb = ++cbGidSeq }
-      return fs.__gid_cb;
-    }
-    const wrap = inp.closest('.js-form-type-checkboxes, .form-checkboxes, .js-form-item, .form-item') || document.body;
-    if(!wrap.__gid_cb){ wrap.__gid_cb = ++cbGidSeq }
-    return wrap.__gid_cb;
-  };
-
-  inputs.forEach(inp=>{
+  const options = inputs.map(inp=>{
     const lab = findLabel(inp);
     const raw = (lab?.textContent || inp.value || '').trim();
-    const key = norm(raw);
-    if(!key) return;
-
-    const type = inp.type; // 'checkbox' | 'radio'
-    let group = null;
-
-    if(type==='radio'){
-      group = inp.name || null;
-      if(group){
-        if(!radioGroups.has(group)) radioGroups.set(group, []);
-        radioGroups.get(group).push(inp);
-      }
-    }else{
-      group = getCbGroup(inp);
-      if(!checkboxGroups.has(group)) checkboxGroups.set(group, []);
-      checkboxGroups.get(group).push(inp);
-    }
-
-    options.push({ input: inp, key, raw, type, group });
-  });
+    return { input: inp, label: lab, raw, key: norm(raw), len: (raw||'').length, type: inp.type };
+  }).filter(o=>o.key);
 
   const lines = (block||'').split('\n').map(s=>s.trim()).filter(Boolean);
   let marked=0, missed=[];
 
-  // util: desmarcar todo o grupo (rádio), ou grupo visual (checkbox) se necessário
-  const uncheckGroup = (opt)=>{
-    if(opt.type==='radio' && opt.group && radioGroups.has(opt.group)){
-      radioGroups.get(opt.group).forEach(i=>{ if(i.checked){ i.checked=false; i.dispatchEvent(new Event('change',{bubbles:true})) }});
-    }
-    // para checkbox, só desmarca se o site usar "mutuamente exclusivas" como checkboxes (raro)
-    // if(opt.type==='checkbox' && opt.group && checkboxGroups.has(opt.group)) { ... }
+  const fireAll=(el)=>{
+    el.dispatchEvent(new InputEvent('input',{bubbles:true}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+    el.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'End'}));
+    el.dispatchEvent(new Event('blur',{bubbles:true}));
   };
 
-  // para debug de melhores candidatos quando não casar
-  const topK = (lineKey, K=3)=>{
-    return options
-      .map(o=>({ o, sc: score(lineKey, o.key) }))
-      .sort((a,b)=>b.sc-a.sc)
-      .slice(0,K)
-      .map(x=>`${x.sc.toFixed(3)}:${x.o.raw.slice(0,80)}`);
+  const clickSafe=(opt)=>{
+    // alguns temas só reagem ao clique no label
+    if(opt.label){ opt.label.click(); }
+    else { opt.input.click(); }
   };
+
+  const topK=(lineKey,K=3)=>options
+    .map(o=>({o,sc:score(lineKey,o.key)}))
+    .sort((a,b)=> b.sc-a.sc || b.o.len-a.o.len)
+    .slice(0,K)
+    .map(x=>`${x.sc.toFixed(3)}:${x.o.raw.slice(0,100)}`);
 
   lines.forEach(line=>{
     const lineKey = norm(line);
     if(!lineKey) return;
+    let best=null, bestSc=0, bestLen=0;
 
-    // escolhe melhor opção
-    let best=null, bestSc=0;
     for(const opt of options){
-      const sc = score(lineKey, opt.key);
-      if(sc>bestSc){ bestSc=sc; best=opt }
-      if(sc>1) break; // exato encontrado
+      const sc = score(lineKey,opt.key);
+      if(sc>bestSc || (sc===bestSc && opt.len>bestLen)){
+        bestSc = sc; best = opt; bestLen = opt.len;
+      }
+      if(sc>1) break; // exato
     }
 
-    if(best && best.input){
-      // se for rádio, limpa grupo e marca a escolhida
-      if(best.type==='radio') uncheckGroup(best);
-
+    if(best){
       if(!best.input.checked){
+        // seta checked e dispara eventos
         best.input.checked = true;
-        // dispara eventos "pegajosos" (alguns formulários só escutam keyup/change)
-        best.input.dispatchEvent(new InputEvent('input',{bubbles:true}));
-        best.input.dispatchEvent(new Event('change',{bubbles:true}));
-        best.input.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'End'}));
-        best.input.dispatchEvent(new Event('blur',{bubbles:true}));
+        fireAll(best.input);
+        // e também clica no label/checkbox para garantir UI bindings
+        clickSafe(best);
+      }else{
+        // mesmo já marcado, dispara eventos para garantir persistência
+        fireAll(best.input);
       }
       marked++;
     }else{
-      missed.push({ line, suggestions: topK(lineKey) });
+      missed.push({ line, tips: topK(lineKey) });
     }
   });
 
-  const missCount = missed.length;
-  console.log('[Características] Opções coletadas:', options.length, 'Rádios:', radioGroups.size, 'Checkbox grupos:', checkboxGroups.size);
-  log(`✅ Características marcadas: ${marked}${missCount? ` | ⚠️ não casou: ${missCount}`:''}`);
-  if(missCount){
-    // loga no console para debug mais rico; no painel mostramos um resumo curto
+  log(`✅ Características marcadas: ${marked}${missed.length? ` | ⚠️ não casou: ${missed.length}`:''}`);
+  if(missed.length){
     console.groupCollapsed('⚠️ Características não casadas – detalhes');
-    missed.forEach(m=>console.log('Linha:', m.line, '\nTop:', m.suggestions.join('  ||  ')));
+    missed.forEach(m=>console.log('Linha:', m.line, '\nTop:', m.tips.join('  ||  ')));
     console.groupEnd();
-    // resumo visível no painel
-    log('↪︎ Não casadas (preview): '+ missed.slice(0,3).map(m=>m.line.slice(0,120)).join(' | ') + (missCount>3?' …':''));
+    log('↪︎ Não casadas (preview): '+ missed.slice(0,3).map(m=>m.line.slice(0,120)).join(' | ') + (missed.length>3?' …':''));
   }
 };
-
   /* ---------- Health warning drop down ---------- */
   const fillHealth = (raw) => {
     raw = norm(raw);
