@@ -195,155 +195,241 @@
     log('✅ H1/Description/Machine name');
   };
 
-  /* ---------- Características (checkboxes) ---------- */
-// --- Normalizador forte e extrator do "apelido curto" (texto após a última "/") ---
-const _normStrong = (s)=> (s||'').toString()
-  .replace(/[\u00A0\u202F]/g,' ')
-  .replace(/[“”„»«]/g,'"').replace(/[’‘´`]/g,"'")
-  .replace(/^[\s\-–—•]+/g,'')
-  .replace(/[-–—]{2,}/g,' ')
-  .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-  .replace(/[^\p{L}\p{N}\/ ]+/gu,' ')
-  .replace(/\s+/g,' ')
-  .trim().toLowerCase();
+/* ---------- Características (checkboxes) — versão final ---------- */
+const markCaracteristicas = (block) => {
+  // ===== Helpers de normalização =====
+  const normL = s => (s || "").toString()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-const _short = (txt)=>{ const k=_normStrong(txt); const i=k.lastIndexOf('/'); return (i>=0?k.slice(i+1):k).trim() };
+  const toks = s => normL(s).split(' ').filter(w => w.length >= 3);
 
-// --- MAPA "apelido curto" -> ID do Drupal (campo field_nppe_bs_characteristic[ID]) ---
-// (Derivado do inventário que você anexou; dá pra expandir fácil.)
-const ID_BY_ALIAS = {
-  // Experiência
-  'pes pre neskusenych majitelov': 2166,
-  'pes pre majitela s malymi skusenostami': 2171,
-  'pes pre skusenych majitelov': 2176,
+  const toParts = t => String(t)
+    .split('/')
+    .map(p => normL(p))
+    .map(x => x.trim())
+    .filter(x => x.length >= 1);
 
-  // Treino
-  'zakladny vycvik': 2191,
-  'potrebujem psa vycvicit': 2196,
-  'potrebujem vycvicit psa precizne': 2201,
+  const inc = (a, b) => a && b && (a.includes(b) || b.includes(a));
 
-  // Tipo de passeio
-  'pokojne prechadzky': 2216,
-  'aktivnejsie prechadzky': 2221,
-  'intenzivne prechadzky': 2226,
-
-  // Duração do passeio
-  'polhodinove az hodinove prechadzky': 2241,
-  'hodinove prechadzky': 2246,
-  'hodinove az dvojhodinove prechadzky': 2251,
-  'viac nez dvojhodinove prechadzky': 2256,
-
-  // Tamanho
-  'trpaslici pes': 2271,
-  'maly pes': 2276,
-  'stredny pes': 2281,
-  'velky pes': 2286,
-  'obri pes': 2291,
-
-  // Slintanie
-  'minimalne slintanie': 2306,
-  'mierne slintanie': 2311,
-  'vydatne slintanie': 2316,
-
-  // Escovação
-  'potreba cesania raz tyzdenne': 2331,
-  'potreba cesania kazdy druhy den': 2336,
-  'potreba cesania kazdy den': 2341,
-
-  // Alergia
-  'nepodstatne': 2351, // (para a pergunta de alergia)
-  'hypoalergenne plemeno': 2356,
-  'nehypoalergenne plemeno': 2361,
-
-  // Barulho
-  'tichy pes': 2376,
-  'komunikativny a hlasity pes': 2381,
-  'velmi hlasiteho psa': 2386,
-
-  // Guarda
-  'nestrazny pes': 2401,
-  'strazny pes steka a varuje': 2406,
-  'strazny pes steka varuje a fyzicky ochranjuje': 2411, // tolera variação “ochraňuje”
-
-  // Convivência com pets
-  'moze potrebovat vycvik ako spolunazivat s ostatnymi maznacikmi': 2426,
-  'vyborne vychadza s ostatnymi domacimi maznacikmi': 2431,
-
-  // Crianças
-  'rodinny pes': 2446,
-  'moze potrebovat zoznamenie pred tym nez bude zit s detmi': 2451,
-};
-
-// Pequenas equivalências (sinônimos/variações) -> apelido do mapa
-const ALIAS_EQUIV = {
-  // treino
-  'plemena ktore potrebuju doslednejsi vycvik su pre mna ok': 'potrebujem psa vycvicit',
-  // slintanie
-  'dog drool i can tolerate some': 'mierne slintanie',
-  // barulho
-  'komunikativne a hlasite': 'komunikativny a hlasity pes',
-  // guarda
-  'steka a upozornuje': 'strazny pes steka a varuje',
-};
-
-// resolve uma chave de lookup a partir da linha colada
-const _resolveAliasKey = (line) => {
-  const full = _normStrong(line);
-  const sh = _short(full);
-  if (ALIAS_EQUIV[sh]) return ALIAS_EQUIV[sh];
-  if (ALIAS_EQUIV[full]) return ALIAS_EQUIV[full];
-  return sh || full;
-};
-
-const markCaracteristicasByMap = (block)=>{
-  const lines = (block||'').split('\n').map(s=>s.trim()).filter(Boolean);
-  let marked=0, missed=[];
-
-  const fireAll=(el)=>{
-    el.dispatchEvent(new InputEvent('input',{bubbles:true}));
-    el.dispatchEvent(new Event('change',{bubbles:true}));
-    el.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'End'}));
-    el.dispatchEvent(new Event('blur',{bubbles:true}));
-  };
-  const findLabelFor=(inp)=>{
-    if(inp.id){
-      const l = document.querySelector(`label[for="${CSS.escape(inp.id)}"]`);
-      if(l) return l;
-    }
-    return inp.closest('label') || inp.parentElement?.querySelector('label') || null;
+  const cover = (A, B) => {
+    if (!A.length) return 0;
+    let inter = 0;
+    const SB = new Set(B);
+    A.forEach(w => { if (SB.has(w)) inter++; });
+    return inter / A.length;
   };
 
-  lines.forEach((raw)=>{
-    const key = _resolveAliasKey(raw);
-    const id  = ID_BY_ALIAS[key];
-    if(!id){
-      missed.push({raw, key});
-      return;
+  // ===== Aliases (iguais aos da sua versão final) =====
+  const aliases = (() => {
+    const m = new Map();
+    const add = (a, b) => {
+      a = normL(a); b = normL(b);
+      m.set(a, (m.get(a) || new Set()).add(b));
+      m.set(b, (m.get(b) || new Set()).add(a));
+    };
+    // Slintanie / drool
+    add('Dog drool? I can tolerate some.', 'Psie slintanie? Niečo znesiem.');
+    add('minimalne slintanie', 'co najmenej slintania');
+    add('mierne slintanie', 'nieco znesiem');
+    // “Nedôležité” ↔ “Nepodstatné”
+    add('nedolezite', 'nepodstatne');
+    // Variações de expressão
+    add('skvele vychadza', 'vyborne vychadza');
+    add('komunikativne a hlasite', 'zhovorcive a hlasne');
+    add('za casu na cas', 'obcas');
+    // Tempo de passeio (variações + typo)
+    add('hodinu az dve hodiny denne', 'hodina az dve hodiny denn');
+    add('hodinu az dve denne', 'hodina az dve hodiny denn');
+    add('pol hodiny', 'polhodina');
+    // Morfologia específica
+    add('hodinu', 'hodina');
+    // “Viac ako” ↔ “Viac než”
+    add('viac ako', 'viac nez');
+    // Hypoalergénne (dupla grafia)
+    add('hypoalergenne', 'hypoalergennne');
+    // Áno/Nie – travessão/hífen
+    add('ano -', 'ano –');
+    add('nie -', 'nie –');
+    return m;
+  })();
+
+  const expandParts = (arr) => {
+    const out = new Set(arr);
+    const all = Array.from(aliases.entries()); // [ [key, Set(values)], ... ]
+    for (const p of [...out]) {
+      const direct = aliases.get(p);
+      if (direct) direct.forEach(v => out.add(v));
+      for (const [key, values] of all) {
+        if (p.includes(key)) {
+          values.forEach(val => {
+            const re = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+            const replaced = p.replace(re, val);
+            if (replaced !== p) out.add(replaced);
+          });
+        }
+      }
     }
-    const sel = `input[name="field_nppe_bs_characteristic[${id}]"]`;
-    const inp = document.querySelector(sel);
-    if(!inp || inp.disabled){
-      missed.push({raw, key, id, reason:'input not found/disabled'});
-      return;
-    }
-    if(!inp.checked){
-      inp.checked = true;
-      fireAll(inp);
-      const lab = findLabelFor(inp);
-      if(lab) lab.click(); else inp.click();
-    }else{
-      // mesmo marcado, refaz eventos (Drupal adora…)
-      fireAll(inp);
-    }
-    marked++;
+    return [...out];
+  };
+
+  // ===== Scoring (placeholders + “ambos lados” estrito) =====
+  const scoreParts = (lineParts, label, requireBoth = true) => {
+    const Lfull = label.full;
+    const Lparts = label.parts.length ? label.parts : [label.full];
+
+    const placeholder = s => !toks(s).length || /^[\-\—\s]*$/.test(s);
+    const anyPlaceholder = lineParts.some(placeholder) || Lparts.some(placeholder);
+
+    const lineTok = toks(lineParts.join(' '));
+    const labTok = toks(Lfull);
+
+    let sFull = inc(Lfull, lineParts.join(' ')) ? 1 : cover(lineTok, labTok);
+
+    let hits = [];
+    lineParts.forEach(p => {
+      const tp = toks(p);
+      let best = 0;
+      for (const lp of Lparts) {
+        if (inc(p, lp)) { best = 1; break; }
+        else { best = Math.max(best, cover(tp, toks(lp))); }
+      }
+      hits.push(best);
+    });
+    hits.sort((a, b) => b - a);
+
+    const needBoth = !anyPlaceholder && (lineParts.length >= 2);
+    const bothOK = needBoth && hits.length >= 2 && hits[0] >= 0.65 && hits[1] >= 0.65;
+
+    // requireBoth é sempre true na sua versão final
+    return requireBoth
+      ? (bothOK ? 0.99 : 0)
+      : (bothOK ? 0.98 : Math.max(sFull, hits[0] || 0));
+  };
+
+  // ===== Coleta de documentos (document + iframes) =====
+  const docs = [document];
+  document.querySelectorAll('iframe').forEach(f => {
+    try { f.contentDocument && docs.push(f.contentDocument); } catch (e) {}
   });
 
-  log(`✅ Características (by ID): ${marked}${missed.length? ` | ⚠️ pendentes: ${missed.length}`:''}`);
-  if(missed.length){
-    log('↪︎ Pendentes (preview): '+ missed.slice(0,5).map(m=>`${m.raw} ⇒ ${m.key}${m.id?` (id:${m.id})`:''}`).join(' | ') + (missed.length>5?' …':''));
-    // dica: se aparecer algum alias faltando, adicione em ALIAS_EQUIV ou ID_BY_ALIAS
+  // ===== Index DOM (labels, groups, headers) =====
+  const labels = [];
+  const groups = new Map();
+  const headers = [];
+  let gid = 0;
+
+  const containersIn = (doc) => Array.from(doc.querySelectorAll('#edit-field-nppe-bs-characteristic,.form-checkboxes'));
+  const itemsIn = (el) => Array.from(el.querySelectorAll('.js-form-item'));
+
+  docs.forEach(doc => {
+    containersIn(doc).forEach(cont => {
+      itemsIn(cont).forEach(div => {
+        const lab = div.querySelector('label.option'); if (!lab) return;
+        const raw = (lab.textContent || '').trim();
+        const input = div.querySelector('input[type="checkbox"]');
+
+        // Header: checkbox desabilitado OU "- ..." mas não "- / ..."
+        const isHeader = (input && input.disabled) || /^-\s*[^-\/]/.test(raw);
+        if (isHeader) {
+          gid++;
+          headers.push({ gid, full: normL(raw), parts: toParts(raw), labelEl: lab, doc });
+          if (!groups.has(gid)) groups.set(gid, []);
+          return;
+        }
+
+        const id = lab.getAttribute('for');
+        const inp = id ? doc.getElementById(id) : (input || null);
+        const entry = { label: lab, full: normL(raw), parts: toParts(raw), input: inp, doc, gid };
+        labels.push(entry);
+        if (inp) { if (!groups.has(gid)) groups.set(gid, []); groups.get(gid).push(inp); }
+      });
+    });
+  });
+
+  const uncheckGroup = (doc, gid, except) => {
+    (groups.get(gid) || []).forEach(el => {
+      if (el !== except && el.checked && !el.disabled) {
+        el.checked = false;
+        fire(el);
+      }
+    });
+  };
+
+  // ===== Reset: desmarca tudo antes de marcar =====
+  for (const { input } of labels) {
+    if (input && input.checked && !input.disabled) {
+      input.checked = false;
+      fire(input);
+    }
   }
+
+  // ===== Processamento das linhas =====
+  const exclusive = true;   // sempre exclusivo
+  const requireBoth = true; // sempre “ambos lados”
+  let marked = 0;
+
+  // normaliza "- / ..." (ou "--- / ...") para opção
+  const lines = String(block || '')
+    .split(/\r?\n/)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(s => s.replace(/^-+\s*\/\s*/, '-- /'));
+
+  const isHeaderLine = s => /^-\s*[^-\/]/.test(s);
+
+  // gid ativo via cabeçalho colado
+  let activeGid = null;
+  let pool = labels;
+
+  for (const lineRaw of lines) {
+    if (isHeaderLine(lineRaw)) {
+      const hp = toParts(lineRaw.replace(/^\-\s*/, ''));
+      let bestH = null, scoreH = 0;
+      for (const h of headers) {
+        const s = scoreParts(hp, h, false);
+        if (s > scoreH) { scoreH = s; bestH = h; }
+        if (s === 1) break;
+      }
+      const newGid = (bestH && scoreH >= 0.55) ? bestH.gid : null;
+      if (newGid !== activeGid) {
+        activeGid = newGid;
+        pool = (activeGid != null) ? labels.filter(l => l.gid === activeGid) : labels;
+      }
+      continue;
+    }
+
+    let parts = toParts(lineRaw);
+    if (!parts.length) parts = [normL(lineRaw)];
+    parts = expandParts(parts);
+
+    let best = null, sc = 0;
+    for (const ld of pool) {
+      const s = inc(ld.full, parts.join(' ')) ? 1 : scoreParts(parts, ld, requireBoth);
+      if (s > sc) { sc = s; best = ld; }
+      if (s === 1) break;
+    }
+
+    if (!best || sc < 0.55) continue;
+
+    const inp = best.input;
+    if (!inp || inp.disabled) continue;
+
+    if (exclusive) uncheckGroup(best.doc, best.gid, inp);
+    if (!inp.checked) {
+      inp.checked = true;
+      fire(inp);
+      marked++;
+    }
+  }
+
+  log('✅ Características marcadas: ' + marked);
 };
+
   /* ---------- Health warning drop down ---------- */
   const fillHealth = (raw) => {
     raw = norm(raw);
@@ -612,7 +698,7 @@ const markCaracteristicasByMap = (block)=>{
     try { fillTitleDescMachine(breed, desc, machine); }
     catch (e) { log('⚠️ H1/Description/Machine: ' + e.message); }
 
-    try { markCaracteristicasByMap(carac); }
+    try { markCaracteristicas(carac); }
     catch (e) { log('⚠️ Características: ' + e.message); }
 
     try { fillHealth(health); }
