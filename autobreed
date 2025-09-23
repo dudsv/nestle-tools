@@ -1,823 +1,673 @@
-(() => {
-  const UI = (() => {
+(function(){
+  const UI = (function(){
     const ov = document.createElement('div');
     ov.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center';
 
     const bx = document.createElement('div');
     bx.style.cssText = 'background:#fff;max-width:min(980px,96vw);width:min(980px,96vw);border-radius:14px;box-shadow:0 12px 36px rgba(0,0,0,.35);padding:14px;font:13px/1.45 system-ui,Segoe UI,Roboto,Arial';
 
-    bx.innerHTML = `
-<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:6px">
-  <b>NPPE – Master Importer</b>
-  <div style="opacity:.7">Cole a linha TSV com 16 colunas (SK Breed … SK META DESCRIPTION)</div>
-  <button id="nppe-x" style="padding:6px 10px;border:1px solid #ccc;border-radius:8px;background:#f5f5f5;cursor:pointer">Fechar</button>
-</div>
-<textarea id="nppe-tsv" placeholder="Cole aqui a LINHA (com TABs; campos entre aspas podem ter múltiplas linhas)" style="width:100%;height:170px;border:1px solid #ddd;border-radius:8px;padding:10px;resize:vertical;box-sizing:border-box"></textarea>
- <div style="display:flex;gap:8px;margin:8px 0 10px;">
-   <button id="nppe-parse" style="padding:8px 12px;border:0;border-radius:8px;background:#555;color:#fff;cursor:pointer">Pré-visualizar</button>
-   <button id="nppe-run" style="padding:8px 12px;border:0;border-radius:8px;background:#0b5;color:#fff;cursor:pointer">Aplicar em tudo</button>
-   <button id="nppe-save" style="padding:8px 12px;border:0;border-radius:8px;background:#06c;color:#fff;cursor:pointer">Salvar (Uložiť)</button>
-   <button id="nppe-delql" style="padding:8px 12px;border:0;border-radius:8px;background:#a11;color:#fff;cursor:pointer">Delete QL</button>
- </div>
+    bx.innerHTML =
+      '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:6px">'
+    + '  <b>NPPE – Master Importer</b>'
+    + '  <div style="opacity:.7">Cole a linha TSV com 16 colunas (SK Breed … SK META DESCRIPTION)</div>'
+    + '  <button id="nppe-x" style="padding:6px 10px;border:1px solid #ccc;border-radius:8px;background:#f5f5f5;cursor:pointer">Fechar</button>'
+    + '</div>'
+    + '<textarea id="nppe-tsv" placeholder="Cole aqui a LINHA (com TABs; campos entre aspas podem ter múltiplas linhas)" style="width:100%;height:170px;border:1px solid #ddd;border-radius:8px;padding:10px;resize:vertical;box-sizing:border-box"></textarea>'
+    + '<div style="display:flex;gap:8px;margin:8px 0 10px;">'
+    + '  <button id="nppe-parse" style="padding:8px 12px;border:0;border-radius:8px;background:#555;color:#fff;cursor:pointer">Pré-visualizar</button>'
+    + '  <button id="nppe-run" style="padding:8px 12px;border:0;border-radius:8px;background:#0b5;color:#fff;cursor:pointer">Aplicar em tudo</button>'
+    + '  <button id="nppe-save" style="padding:8px 12px;border:0;border-radius:8px;background:#06c;color:#fff;cursor:pointer">Salvar (Uložiť)</button>'
+    + '  <button id="nppe-delql" style="padding:8px 12px;border:0;border-radius:8px;background:#a11;color:#fff;cursor:pointer">Delete QL</button>'
+    + '  <button id="nppe-delhw" style="padding:8px 12px;border:0;border-radius:8px;background:#a11;color:#fff;cursor:pointer">Remove HW</button>'
+    + '</div>'
+    + '<pre id="nppe-out" style="margin:0;white-space:pre-wrap;max-height:300px;overflow:auto;background:#fafafa;border:1px dashed #ddd;padding:8px;border-radius:8px"></pre>';
 
-</div>
-<pre id="nppe-out" style="margin:0;white-space:pre-wrap;max-height:300px;overflow:auto;background:#fafafa;border:1px dashed #ddd;padding:8px;border-radius:8px"></pre>
-`;
     ov.appendChild(bx);
     document.body.appendChild(ov);
-    bx.querySelector('#nppe-x').onclick = () => ov.remove();
+    bx.querySelector('#nppe-x').onclick = function(){ ov.remove(); };
 
     return {
-      ov,
+      ov: ov,
       ta: bx.querySelector('#nppe-tsv'),
       out: bx.querySelector('#nppe-out'),
       btnParse: bx.querySelector('#nppe-parse'),
       btnRun: bx.querySelector('#nppe-run'),
       btnSave: bx.querySelector('#nppe-save'),
-      btnDeleteQL: bx.querySelector('#nppe-delql')
+      btnDeleteQL: bx.querySelector('#nppe-delql'),
+      btnDeleteHW: bx.querySelector('#nppe-delhw')
     };
   })();
 
-  const log = (m) => {
+  const log = function(m){
     UI.out.textContent += (UI.out.textContent ? '\n' : '') + m;
   };
 
-  const norm = (s) => String(s ?? '')
-    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
-    .replace(/\u00A0/g, ' ')
-    .replace(/\r\n/g, '\n');
-
-  const enc = (t) => String(t)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-
-  const fire = (el) => {
-    if (!el) return;
-    el.dispatchEvent(new InputEvent('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    el.dispatchEvent(new Event('blur', { bubbles: true }));
+  const norm = function(s){
+    return String(s == null ? '' : s)
+      .replace(/[\u200B-\u200D\u2060\uFEFF]/g,'')
+      .replace(/\u00A0/g,' ')
+      .replace(/\r\n/g,'\n');
   };
 
-  const delay = (ms) => new Promise(r => setTimeout(r, ms));
+  const enc = function(t){
+    return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  };
 
-  function waitDOMChange(timeoutMs = 10000) {
-  return new Promise(resolve => {
-    let done = false, tmo;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      clearTimeout(tmo);
-      try { mo.disconnect(); } catch {}
-      if (jqOn) {
-        try { $(document).off('ajaxSend', onSend); $(document).off('ajaxComplete', onComplete); } catch {}
-      }
-      setTimeout(resolve, 150); // respiro p/ estabilizar DOM
-    };
-    const mo = new MutationObserver(() => finish());
-    mo.observe(document.body, { childList: true, subtree: true });
+  const fire = function(el){
+    if(!el) return;
+    el.dispatchEvent(new InputEvent('input',{bubbles:true}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+    el.dispatchEvent(new Event('blur',{bubbles:true}));
+  };
 
-    const jqOn = !!(window.jQuery && jQuery(document).ajaxComplete);
-    let ajaxSeen = false;
-    const onSend = () => { ajaxSeen = true; };
-    const onComplete = () => { ajaxSeen && (!window.jQuery || jQuery.active === 0) && finish(); };
-    if (jqOn) { $(document).on('ajaxSend', onSend); $(document).on('ajaxComplete', onComplete); }
+  const delay = function(ms){ return new Promise(function(r){ setTimeout(r,ms); }); };
 
-    tmo = setTimeout(finish, timeoutMs);
-  });
-}
-
-  // --- Clicar no botão "Uložiť" (Salvar) ---
-const clickSubmit = async () => {
-  const btn = document.querySelector('input[data-drupal-selector="edit-submit"]');
-  if (!btn) {
-    log('⚠️ Botão "Save" não encontrado.');
-    return;
-  }
-  try { btn.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
-  // dispara eventos como um clique real
-  btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-  setTimeout(() => { if (typeof btn.click === 'function') btn.click(); }, 80);
-  log('💾 Clique em "Save" disparado.');
-};
-
-// amarra o botão do UI
-UI.btnSave.onclick = clickSubmit;
-
-  const parseTSV = (raw) => {
-    raw = norm(raw).trim();
-    const out = [];
-    let cur = '';
-    let q = false;
-
-    for (let i = 0; i < raw.length; i++) {
-      const c = raw[i];
-      if (c === '"') {
-        const nxt = raw[i + 1];
-        if (q && nxt === '"') {
-          cur += '"';
-          i++;
-          continue;
+  function waitDOMChange(timeoutMs){
+    if(typeof timeoutMs!=='number') timeoutMs = 12000;
+    return new Promise(function(resolve){
+      var done=false, tmo;
+      function finish(){
+        if(done) return;
+        done=true; clearTimeout(tmo);
+        try{ mo.disconnect(); }catch(e){}
+        if(jqOn){
+          try{ $(document).off('ajaxSend', onSend); $(document).off('ajaxComplete', onComplete); }catch(e){}
         }
-        q = !q;
-        continue;
+        setTimeout(resolve,150);
       }
-      if (!q && c === '\t') {
-        out.push(cur);
-        cur = '';
-        continue;
+      var mo = new MutationObserver(function(){ finish(); });
+      mo.observe(document.body,{childList:true,subtree:true});
+
+      var jqOn = !!(window.jQuery && jQuery(document).ajaxComplete);
+      var ajaxSeen=false;
+      function onSend(){ ajaxSeen=true; }
+      function onComplete(){ if(ajaxSeen && (!window.jQuery || jQuery.active===0)) finish(); }
+      if(jqOn){ $(document).on('ajaxSend', onSend); $(document).on('ajaxComplete', onComplete); }
+
+      tmo = setTimeout(finish, timeoutMs);
+    });
+  }
+
+  // Save
+  const clickSubmit = async function(){
+    const btn = document.querySelector('input[data-drupal-selector="edit-submit"]');
+    if(!btn){ log('⚠️ Botão "Save" não encontrado.'); return; }
+    try{ btn.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+    btn.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window}));
+    setTimeout(function(){ if(typeof btn.click==='function') btn.click(); }, 80);
+    log('💾 Clique em "Save" disparado.');
+  };
+  UI.btnSave.onclick = clickSubmit;
+
+  const parseTSV = function(raw){
+    raw = norm(raw).trim();
+    var out=[], cur='', q=false;
+    for(var i=0;i<raw.length;i++){
+      var c=raw[i];
+      if(c==='\"'){
+        var nxt=raw[i+1];
+        if(q && nxt==='\"'){ cur+='\"'; i++; continue; }
+        q=!q; continue;
       }
-      cur += c;
+      if(!q && c==='\t'){ out.push(cur); cur=''; continue; }
+      cur+=c;
     }
     out.push(cur);
-    while (out.length < 16) out.push('');
-    return out.slice(0, 16).map(s => {
-      s = s.replace(/^\n+|\n+$/g, '');
-      if (/^['"“„«‘]/.test(s) && /['"”„»’]$/.test(s)) s = s.slice(1, -1).trim();
+    while(out.length<16) out.push('');
+    return out.slice(0,16).map(function(s){
+      s=s.replace(/^\n+|\n+$/g,'');
+      if(/^['"“„«‘]/.test(s)&&/['"”„»’]$/.test(s)) s=s.slice(1,-1).trim();
       return s;
     });
   };
 
-  const select = (q, r = document) => r.querySelector(q);
-  const selectAll = (q, r = document) => Array.from(r.querySelectorAll(q));
-  const ckPool = () => (window.Drupal && Drupal.CKEditor5Instances) || null;
+  const select = function(q,r){ return (r||document).querySelector(q); };
+  const selectAll = function(q,r){ return Array.from((r||document).querySelectorAll(q)); };
+  const ckPool = function(){ return (window.Drupal && Drupal.CKEditor5Instances) || null; };
 
-  const findCKEByTextarea = (ta) => {
+  const findCKEByTextarea = function(ta){
     const pool = ckPool();
-    if (pool) {
-      try {
+    if(pool){
+      try{
         const id = ta.getAttribute('data-ckeditor5-id') || ta.dataset.ckeditor5Id;
-        if (typeof pool.get === 'function') {
-          return pool.get(id) || pool.get(ta.id) || null;
-        } else {
-          return pool[id] || pool[ta.id] || null;
-        }
-      } catch (e) {}
+        if(typeof pool.get==='function'){ return pool.get(id)||pool.get(ta.id)||null; }
+        else { return pool[id] || pool[ta.id] || null; }
+      }catch(e){}
     }
     return null;
   };
 
-  const setCKEHtml = (editable, html) => {
-    try {
-      const ta = editable?.closest('.field--type-text-long,.js-form-item')?.querySelector('textarea.js-text-full[data-ckeditor5-id]');
+  const setCKEHtml = function(editable, html){
+    try{
+      const ta = editable && editable.closest('.field--type-text-long,.js-form-item') && editable.closest('.field--type-text-long,.js-form-item').querySelector('textarea.js-text-full[data-ckeditor5-id]');
       const ed = ta ? findCKEByTextarea(ta) : null;
-
-      if (ed?.setData) {
+      if(ed && ed.setData){
         ed.setData(html);
-      } else {
-        if (editable) editable.innerHTML = html;
-        if (ta) {
-          ta.value = html;
-          ta.setAttribute('data-editor-value-is-changed', 'true');
-        }
+      }else{
+        if(editable) editable.innerHTML = html;
+        if(ta){ ta.value = html; ta.setAttribute('data-editor-value-is-changed','true'); }
       }
-      if (ta) fire(ta);
-      if (editable) fire(editable);
-    } catch (e) {
-      console.warn('CK set error', e);
-    }
+      if(ta) fire(ta);
+      if(editable) fire(editable);
+    }catch(e){ console.warn('CK set error',e); }
   };
 
-  const toHtml = (raw) => {
+  const toHtml = function(raw){
     raw = norm(raw);
-    if (!raw) return '';
-    if (/<\w|<\/\w|<br/gi.test(raw)) return raw;
-    const blocks = raw.split(/\n{2,}/).map(x => x.trim()).filter(Boolean);
-    return blocks.map(p => '<p>' + enc(p).replace(/\n/g, '<br>') + '</p>').join('');
+    if(!raw) return '';
+    if(/<\w|<\/\w|<br/gi.test(raw)) return raw;
+    const blocks = raw.split(/\n{2,}/).map(function(x){ return x.trim(); }).filter(Boolean);
+    return blocks.map(function(p){ return '<p>'+enc(p).replace(/\n/g,'<br>')+'</p>'; }).join('');
   };
 
-  /* ---------- ACCORDION OPENNER (com espera) ---------- */
-  const accRoot = () => document.querySelector('#edit-field-components-3-subform') || document;
-  const accEditors = () => selectAll('.paragraph-widget--c-text textarea.js-text-full[data-ckeditor5-id]', accRoot());
+  // Accordion
+  const accRoot = function(){ return document.querySelector('#edit-field-components-3-subform') || document; };
+  const accEditors = function(){ return selectAll('.paragraph-widget--c-text textarea.js-text-full[data-ckeditor5-id]', accRoot()); };
 
-  const waitAccReady = async (timeout = 120000, min = 5) => {
-    const t0 = Date.now();
-    let last = -1, stable = 0;
-    for (;;) {
+  const waitAccReady = async function(timeout, min){
+    timeout = (typeof timeout==='number')? timeout : 120000;
+    min = (typeof min==='number')? min : 5;
+    const t0 = Date.now(); var last=-1, stable=0;
+    for(;;){
       const list = accEditors();
-      const pool = ckPool();
-      let ok = 0;
-      list.forEach(ta => {
-        const ed = findCKEByTextarea(ta);
-        if (ed?.setData) ok++;
-      });
-      if (list.length >= min && ok >= Math.min(min, list.length)) {
-        if (list.length === last) stable++;
-        else { stable = 0; last = list.length; }
-        if (stable >= 2) break;
+      let ok=0;
+      list.forEach(function(ta){ const ed = findCKEByTextarea(ta); if(ed && ed.setData) ok++; });
+      if(list.length>=min && ok>=Math.min(min,list.length)){
+        if(list.length===last) stable++; else { stable=0; last=list.length; }
+        if(stable>=2) break;
       }
-      if (Date.now() - t0 > timeout) break;
+      if(Date.now()-t0>timeout) break;
       await delay(500);
     }
     return accEditors().length;
   };
 
-  const openAccordionsAndWait = async () => {
-    try {
+  const openAccordionsAndWait = async function(){
+    try{
       const btns = Array.from(document.querySelectorAll('.paragraphs-icon-button-edit:not(.paragraphs-previewer)'));
-      if (!btns.length) {
-        log('↗️ Accordion Openner: nenhum botão encontrado');
-        return;
-      }
-      for (let i = 0; i < btns.length; i++) {
-        btns[i].dispatchEvent(new Event('mousedown'));
-        await delay(4500);
-      }
-      const n = await waitAccReady(120000, 5);
+      if(!btns.length){ log('↗️ Accordion Openner: nenhum botão encontrado'); return; }
+      for(var i=0;i<btns.length;i++){ btns[i].dispatchEvent(new Event('mousedown')); await delay(4500); }
+      const n = await waitAccReady(120000,5);
       log('↗️ Accordion Openner concluído. Editores detectados: ' + n);
-    } catch (e) {
-      log('⚠️ Accordion Openner: ' + e.message);
-    }
+    }catch(e){ log('⚠️ Accordion Openner: ' + e.message); }
   };
 
-  /* ---------- H1 + Description + Machine name ---------- */
-  const fillTitleDescMachine = (title, desc, machine) => {
+  // Title/Desc/Machine
+  const fillTitleDescMachine = function(title, desc, machine){
     const titleEl = select('#edit-title-0-value') || select('input[name="title[0][value]"]');
-    if (titleEl) { titleEl.value = title || ''; fire(titleEl); }
-
+    if(titleEl){ titleEl.value = title||''; fire(titleEl); }
     const mainEd = select('.ck-editor__editable[aria-label*="main" i]') || select('.ck-editor__editable');
-    if (mainEd) setCKEHtml(mainEd, toHtml(desc || ''));
-
+    if(mainEd) setCKEHtml(mainEd, toHtml(desc||''));
     const mach = select('#edit-field-nppe-bs-machine-name-0-value') || select('input[name="field_nppe_bs_machine_name[0][value]"]');
-    if (mach) { mach.value = (machine || ''); fire(mach); }
-
+    if(mach){ mach.value = machine||''; fire(mach); }
     log('✅ H1/Description/Machine name');
   };
 
-/* ---------- Características (checkboxes) — versão final ---------- */
-const markCaracteristicas = (block) => {
-  // ===== Helpers de normalização =====
-  const normL = s => (s || "").toString()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  // Características (versão final)
+  const markCaracteristicas = function(block){
+    const normL = function(s){ return (s||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\p{L}\p{N}]+/gu,' ').replace(/\s+/g,' ').trim(); };
+    const toks = function(s){ return normL(s).split(' ').filter(function(w){ return w.length>=3; }); };
+    const toParts = function(t){ return String(t).split('/').map(function(p){ return normL(p); }).map(function(x){ return x.trim(); }).filter(function(x){ return x.length>=1; }); };
+    const inc = function(a,b){ return a && b && (a.indexOf(b)>=0 || b.indexOf(a)>=0); };
+    const cover = function(A,B){ if(!A.length) return 0; var inter=0; var SB=new Set(B); A.forEach(function(w){ if(SB.has(w)) inter++; }); return inter/A.length; };
 
-  const toks = s => normL(s).split(' ').filter(w => w.length >= 3);
+    const aliases = (function(){
+      const m=new Map();
+      const add=function(a,b){ a=normL(a); b=normL(b); m.set(a,(m.get(a)||new Set()).add(b)); m.set(b,(m.get(b)||new Set()).add(a)); };
+      add('Dog drool? I can tolerate some.','Psie slintanie? Niečo znesiem.');
+      add('minimalne slintanie','co najmenej slintania');
+      add('mierne slintanie','nieco znesiem');
+      add('nedolezite','nepodstatne');
+      add('skvele vychadza','vyborne vychadza');
+      add('komunikativne a hlasite','zhovorcive a hlasne');
+      add('za casu na cas','obcas');
+      add('hodinu az dve hodiny denne','hodina az dve hodiny denn');
+      add('hodinu az dve denne','hodina az dve hodiny denn');
+      add('pol hodiny','polhodina');
+      add('hodinu','hodina');
+      add('viac ako','viac nez');
+      add('hypoalergenne','hypoalergennne');
+      add('ano -','ano –');
+      add('nie -','nie –');
+      return m;
+    })();
 
-  const toParts = t => String(t)
-    .split('/')
-    .map(p => normL(p))
-    .map(x => x.trim())
-    .filter(x => x.length >= 1);
-
-  const inc = (a, b) => a && b && (a.includes(b) || b.includes(a));
-
-  const cover = (A, B) => {
-    if (!A.length) return 0;
-    let inter = 0;
-    const SB = new Set(B);
-    A.forEach(w => { if (SB.has(w)) inter++; });
-    return inter / A.length;
-  };
-
-  // ===== Aliases (iguais aos da sua versão final) =====
-  const aliases = (() => {
-    const m = new Map();
-    const add = (a, b) => {
-      a = normL(a); b = normL(b);
-      m.set(a, (m.get(a) || new Set()).add(b));
-      m.set(b, (m.get(b) || new Set()).add(a));
+    const expandParts = function(arr){
+      const out=new Set(arr);
+      const all=Array.from(aliases.entries());
+      Array.from(out).forEach(function(p){
+        const direct=aliases.get(p);
+        if(direct) direct.forEach(function(v){ out.add(v); });
+        all.forEach(function(pair){
+          const key=pair[0], values=pair[1];
+          if(p.indexOf(key)>=0){
+            values.forEach(function(val){
+              const re=new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g');
+              const replaced=p.replace(re,val);
+              if(replaced!==p) out.add(replaced);
+            });
+          }
+        });
+      });
+      return Array.from(out);
     };
-    // Slintanie / drool
-    add('Dog drool? I can tolerate some.', 'Psie slintanie? Niečo znesiem.');
-    add('minimalne slintanie', 'co najmenej slintania');
-    add('mierne slintanie', 'nieco znesiem');
-    // “Nedôležité” ↔ “Nepodstatné”
-    add('nedolezite', 'nepodstatne');
-    // Variações de expressão
-    add('skvele vychadza', 'vyborne vychadza');
-    add('komunikativne a hlasite', 'zhovorcive a hlasne');
-    add('za casu na cas', 'obcas');
-    // Tempo de passeio (variações + typo)
-    add('hodinu az dve hodiny denne', 'hodina az dve hodiny denn');
-    add('hodinu az dve denne', 'hodina az dve hodiny denn');
-    add('pol hodiny', 'polhodina');
-    // Morfologia específica
-    add('hodinu', 'hodina');
-    // “Viac ako” ↔ “Viac než”
-    add('viac ako', 'viac nez');
-    // Hypoalergénne (dupla grafia)
-    add('hypoalergenne', 'hypoalergennne');
-    // Áno/Nie – travessão/hífen
-    add('ano -', 'ano –');
-    add('nie -', 'nie –');
-    return m;
-  })();
 
-  const expandParts = (arr) => {
-    const out = new Set(arr);
-    const all = Array.from(aliases.entries()); // [ [key, Set(values)], ... ]
-    for (const p of [...out]) {
-      const direct = aliases.get(p);
-      if (direct) direct.forEach(v => out.add(v));
-      for (const [key, values] of all) {
-        if (p.includes(key)) {
-          values.forEach(val => {
-            const re = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-            const replaced = p.replace(re, val);
-            if (replaced !== p) out.add(replaced);
-          });
+    const scoreParts = function(lineParts,label,requireBoth){
+      if(typeof requireBoth==='undefined') requireBoth=true;
+      const Lfull=label.full;
+      const Lparts=label.parts.length? label.parts : [label.full];
+      const placeholder=function(s){ return !toks(s).length || /^[\-\—\s]*$/.test(s); };
+      const anyPlaceholder = lineParts.some(placeholder) || Lparts.some(placeholder);
+      const lineTok=toks(lineParts.join(' '));
+      const labTok=toks(Lfull);
+      var sFull = inc(Lfull, lineParts.join(' ')) ? 1 : cover(lineTok, labTok);
+      var hits=[];
+      lineParts.forEach(function(p){
+        const tp=toks(p); var best=0;
+        for(var i=0;i<Lparts.length;i++){
+          var lp=Lparts[i];
+          if(inc(p,lp)){ best=1; break; } else { best=Math.max(best, cover(tp, toks(lp))); }
         }
-      }
-    }
-    return [...out];
-  };
+        hits.push(best);
+      });
+      hits.sort(function(a,b){ return b-a; });
+      const needBoth = !anyPlaceholder && (lineParts.length>=2);
+      const bothOK = needBoth && hits.length>=2 && hits[0]>=0.65 && hits[1]>=0.65;
+      return requireBoth ? (bothOK?0.99:0) : (bothOK?0.98:Math.max(sFull, hits[0]||0));
+    };
 
-  // ===== Scoring (placeholders + “ambos lados” estrito) =====
-  const scoreParts = (lineParts, label, requireBoth = true) => {
-    const Lfull = label.full;
-    const Lparts = label.parts.length ? label.parts : [label.full];
+    // docs
+    const docs=[document];
+    document.querySelectorAll('iframe').forEach(function(f){ try{ if(f.contentDocument) docs.push(f.contentDocument); }catch(e){} });
 
-    const placeholder = s => !toks(s).length || /^[\-\—\s]*$/.test(s);
-    const anyPlaceholder = lineParts.some(placeholder) || Lparts.some(placeholder);
+    const labels=[]; const groups=new Map(); const headers=[]; var gid=0;
+    const containersIn=function(doc){ return Array.from(doc.querySelectorAll('#edit-field-nppe-bs-characteristic,.form-checkboxes')); };
+    const itemsIn=function(el){ return Array.from(el.querySelectorAll('.js-form-item')); };
 
-    const lineTok = toks(lineParts.join(' '));
-    const labTok = toks(Lfull);
-
-    let sFull = inc(Lfull, lineParts.join(' ')) ? 1 : cover(lineTok, labTok);
-
-    let hits = [];
-    lineParts.forEach(p => {
-      const tp = toks(p);
-      let best = 0;
-      for (const lp of Lparts) {
-        if (inc(p, lp)) { best = 1; break; }
-        else { best = Math.max(best, cover(tp, toks(lp))); }
-      }
-      hits.push(best);
-    });
-    hits.sort((a, b) => b - a);
-
-    const needBoth = !anyPlaceholder && (lineParts.length >= 2);
-    const bothOK = needBoth && hits.length >= 2 && hits[0] >= 0.65 && hits[1] >= 0.65;
-
-    // requireBoth é sempre true na sua versão final
-    return requireBoth
-      ? (bothOK ? 0.99 : 0)
-      : (bothOK ? 0.98 : Math.max(sFull, hits[0] || 0));
-  };
-
-  // ===== Coleta de documentos (document + iframes) =====
-  const docs = [document];
-  document.querySelectorAll('iframe').forEach(f => {
-    try { f.contentDocument && docs.push(f.contentDocument); } catch (e) {}
-  });
-
-  // ===== Index DOM (labels, groups, headers) =====
-  const labels = [];
-  const groups = new Map();
-  const headers = [];
-  let gid = 0;
-
-  const containersIn = (doc) => Array.from(doc.querySelectorAll('#edit-field-nppe-bs-characteristic,.form-checkboxes'));
-  const itemsIn = (el) => Array.from(el.querySelectorAll('.js-form-item'));
-
-  docs.forEach(doc => {
-    containersIn(doc).forEach(cont => {
-      itemsIn(cont).forEach(div => {
-        const lab = div.querySelector('label.option'); if (!lab) return;
-        const raw = (lab.textContent || '').trim();
-        const input = div.querySelector('input[type="checkbox"]');
-
-        // Header: checkbox desabilitado OU "- ..." mas não "- / ..."
-        const isHeader = (input && input.disabled) || /^-\s*[^-\/]/.test(raw);
-        if (isHeader) {
-          gid++;
-          headers.push({ gid, full: normL(raw), parts: toParts(raw), labelEl: lab, doc });
-          if (!groups.has(gid)) groups.set(gid, []);
-          return;
-        }
-
-        const id = lab.getAttribute('for');
-        const inp = id ? doc.getElementById(id) : (input || null);
-        const entry = { label: lab, full: normL(raw), parts: toParts(raw), input: inp, doc, gid };
-        labels.push(entry);
-        if (inp) { if (!groups.has(gid)) groups.set(gid, []); groups.get(gid).push(inp); }
+    docs.forEach(function(doc){
+      containersIn(doc).forEach(function(cont){
+        itemsIn(cont).forEach(function(div){
+          const lab = div.querySelector('label.option'); if(!lab) return;
+          const raw = (lab.textContent||'').trim();
+          const input = div.querySelector('input[type="checkbox"]');
+          const isHeader = (input && input.disabled) || /^-\s*[^-\/]/.test(raw);
+          if(isHeader){
+            gid++;
+            headers.push({ gid:gid, full:normL(raw), parts:toParts(raw), labelEl:lab, doc:doc });
+            if(!groups.has(gid)) groups.set(gid,[]);
+            return;
+          }
+          const id=lab.getAttribute('for');
+          const inp=id? doc.getElementById(id) : (input||null);
+          const entry={ label:lab, full:normL(raw), parts:toParts(raw), input:inp, doc:doc, gid:gid };
+          labels.push(entry);
+          if(inp){ if(!groups.has(gid)) groups.set(gid,[]); groups.get(gid).push(inp); }
+        });
       });
     });
-  });
 
-  const uncheckGroup = (doc, gid, except) => {
-    (groups.get(gid) || []).forEach(el => {
-      if (el !== except && el.checked && !el.disabled) {
-        el.checked = false;
-        fire(el);
+    const uncheckGroup=function(doc,gid,except){
+      (groups.get(gid)||[]).forEach(function(el){
+        if(el!==except && el.checked && !el.disabled){ el.checked=false; fire(el); }
+      });
+    };
+
+    // reset all
+    labels.forEach(function(o){ if(o.input && o.input.checked && !o.input.disabled){ o.input.checked=false; fire(o.input); } });
+
+    const exclusive=true, requireBoth=true; var marked=0;
+
+    const lines = String(block||'').split(/\r?\n/).map(function(s){ return s.trim(); }).filter(Boolean).map(function(s){ return s.replace(/^-+\s*\/\s*/,'-- /'); });
+    const isHeaderLine=function(s){ return /^-\s*[^-\/]/.test(s); };
+
+    var activeGid=null; var pool=labels;
+
+    for(var li=0; li<lines.length; li++){
+      var lineRaw=lines[li];
+      if(isHeaderLine(lineRaw)){
+        const hp = toParts(lineRaw.replace(/^\-\s*/,''));
+        var bestH=null, scoreH=0;
+        for(var h=0; h<headers.length; h++){
+          var s = scoreParts(hp, headers[h], false);
+          if(s>scoreH){ scoreH=s; bestH=headers[h]; }
+          if(s===1) break;
+        }
+        var newGid = (bestH && scoreH>=0.55) ? bestH.gid : null;
+        if(newGid!==activeGid){
+          activeGid=newGid;
+          pool = (activeGid!=null)? labels.filter(function(l){ return l.gid===activeGid; }) : labels;
+        }
+        continue;
       }
-    });
+
+      var parts = toParts(lineRaw);
+      if(!parts.length) parts=[normL(lineRaw)];
+      parts = expandParts(parts);
+
+      var best=null, sc=0;
+      for(var j=0;j<pool.length;j++){
+        var ld=pool[j];
+        var s2 = inc(ld.full, parts.join(' '))? 1 : scoreParts(parts, ld, requireBoth);
+        if(s2>sc){ sc=s2; best=ld; }
+        if(s2===1) break;
+      }
+
+      if(!best || sc<0.55) continue;
+      const inp=best.input;
+      if(!inp || inp.disabled) continue;
+
+      if(exclusive) uncheckGroup(best.doc, best.gid, inp);
+      if(!inp.checked){ inp.checked=true; fire(inp); marked++; }
+    }
+
+    log('✅ Características marcadas: ' + marked);
   };
 
-  // ===== Reset: desmarca tudo antes de marcar =====
-  for (const { input } of labels) {
-    if (input && input.checked && !input.disabled) {
-      input.checked = false;
-      fire(input);
-    }
-  }
-
-  // ===== Processamento das linhas =====
-  const exclusive = true;   // sempre exclusivo
-  const requireBoth = true; // sempre “ambos lados”
-  let marked = 0;
-
-  // normaliza "- / ..." (ou "--- / ...") para opção
-  const lines = String(block || '')
-    .split(/\r?\n/)
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(s => s.replace(/^-+\s*\/\s*/, '-- /'));
-
-  const isHeaderLine = s => /^-\s*[^-\/]/.test(s);
-
-  // gid ativo via cabeçalho colado
-  let activeGid = null;
-  let pool = labels;
-
-  for (const lineRaw of lines) {
-    if (isHeaderLine(lineRaw)) {
-      const hp = toParts(lineRaw.replace(/^\-\s*/, ''));
-      let bestH = null, scoreH = 0;
-      for (const h of headers) {
-        const s = scoreParts(hp, h, false);
-        if (s > scoreH) { scoreH = s; bestH = h; }
-        if (s === 1) break;
-      }
-      const newGid = (bestH && scoreH >= 0.55) ? bestH.gid : null;
-      if (newGid !== activeGid) {
-        activeGid = newGid;
-        pool = (activeGid != null) ? labels.filter(l => l.gid === activeGid) : labels;
-      }
-      continue;
-    }
-
-    let parts = toParts(lineRaw);
-    if (!parts.length) parts = [normL(lineRaw)];
-    parts = expandParts(parts);
-
-    let best = null, sc = 0;
-    for (const ld of pool) {
-      const s = inc(ld.full, parts.join(' ')) ? 1 : scoreParts(parts, ld, requireBoth);
-      if (s > sc) { sc = s; best = ld; }
-      if (s === 1) break;
-    }
-
-    if (!best || sc < 0.55) continue;
-
-    const inp = best.input;
-    if (!inp || inp.disabled) continue;
-
-    if (exclusive) uncheckGroup(best.doc, best.gid, inp);
-    if (!inp.checked) {
-      inp.checked = true;
-      fire(inp);
-      marked++;
-    }
-  }
-
-  log('✅ Características marcadas: ' + marked);
-};
-
-  /* ---------- Health warning drop down ---------- */
-  const fillHealth = (raw) => {
+  // Health warning (fill)
+  const fillHealth = function(raw){
     raw = norm(raw);
-    const lines = raw.split('\n').filter(x => x.trim().length);
-    const title = lines.shift()?.trim() || '';
-    const bullets = [];
-    const paras = [];
-
-    lines.forEach(l => {
-      /^\s*[-–—•]\s+/.test(l) ? bullets.push(l.replace(/^\s*[-–—•]\s+/, '')) : paras.push(l);
-    });
-
-    const pHtml = paras.length ? ('<p>' + enc(paras.join('\n')).replace(/\n/g, '<br>&nbsp;') + '</p>') : '';
-    const ul = bullets.length ? ('<ul>' + bullets.map(v => '<li>' + enc(v) + '<br>&nbsp;</li>').join('') + '</ul>') : '';
-
-    const titleInput =
-      select('[data-drupal-selector$="subform-field-health-warning-title-0-value"]') ||
-      select('input[name*="[field_health_warning_title]"]');
-
-    const editor =
-      select('.field--name-field-health-warning-description .ck-editor__editable[contenteditable]') ||
-      select('.ck-editor__editable[contenteditable]');
-
-    const hiddenTA =
-      select('textarea[data-drupal-selector$="subform-field-health-warning-description-0-value"]') ||
-      select('textarea[name*="[field_health_warning_description]"]');
-
-    if (titleInput) { titleInput.value = title; fire(titleInput); }
-    if (editor) {
-      setCKEHtml(editor, pHtml + ul);
-      if (hiddenTA) {
-        hiddenTA.value = pHtml + ul;
-        fire(hiddenTA);
-      }
+    const lines = raw.split('\n').filter(function(x){ return x.trim().length; });
+    const title = (lines.shift() || '').trim();
+    const bullets=[]; const paras=[];
+    lines.forEach(function(l){ (/^\s*[-–—•]\s+/.test(l) ? bullets.push(l.replace(/^\s*[-–—•]\s+/,'')) : paras.push(l)); });
+    const pHtml = paras.length ? ('<p>'+enc(paras.join('\n')).replace(/\n/g,'<br>&nbsp;')+'</p>') : '';
+    const ul = bullets.length ? ('<ul>'+bullets.map(function(v){ return '<li>'+enc(v)+'<br>&nbsp;</li>'; }).join('')+'</ul>') : '';
+    const titleInput = select('[data-drupal-selector$="subform-field-health-warning-title-0-value"]') || select('input[name*="[field_health_warning_title]"]');
+    const editor = select('.field--name-field-health-warning-description .ck-editor__editable[contenteditable]') || select('.ck-editor__editable[contenteditable]');
+    const hiddenTA = select('textarea[data-drupal-selector$="subform-field-health-warning-description-0-value"]') || select('textarea[name*="[field_health_warning_description]"]');
+    if(titleInput){ titleInput.value=title; fire(titleInput); }
+    if(editor){
+      setCKEHtml(editor, pHtml+ul);
+      if(hiddenTA){ hiddenTA.value=pHtml+ul; fire(hiddenTA); }
     }
     log('✅ Health warning');
   };
 
-  /* ---------- Image+text (Osobnosť & Pôvod) ---------- */
-  const fillImageText = (personality, history) => {
-    const docs = [document];
-    selectAll('iframe').forEach(f => {
-      try { f.contentDocument && docs.push(f.contentDocument); } catch (e) {}
-    });
+  // Remove Health Warning (paragraph 0)
+  const deleteHealthWarningParagraph = async function(){
+    const PAR_IDX=0;
+    const DATA_SEL_BASENAME='edit-field-components-'+PAR_IDX+'-subform-field-health-warning-description-0-value';
 
-    const findBlocks = (doc) =>
-      selectAll('.field--name-field-c-sideimagetext-summary', doc).map(w => {
+    const collapseBtn =
+         document.querySelector('#field-components-'+PAR_IDX+'-collapse')
+      || document.querySelector('[id^="field-components-'+PAR_IDX+'-collapse"]')
+      || document.querySelector('[data-drupal-selector^="field-components-'+PAR_IDX+'-collapse"]');
+    if(!collapseBtn){ console.warn('[health-warning-delete] Collapse não encontrado.'); log('❌ Remove HW: collapse não encontrado.'); return; }
+
+    const parTop = collapseBtn.closest('.paragraph-top') || collapseBtn.closest('[id^="edit-field-components-"]');
+    if(!parTop){ console.warn('[health-warning-delete] Top não encontrado.'); log('❌ Remove HW: top não encontrado.'); return; }
+
+    const parRoot = (parTop.parentElement && parTop.parentElement.closest('[id^="edit-field-components-"]')) || parTop.parentElement || parTop;
+    if(!parRoot){ console.warn('[health-warning-delete] Wrapper não encontrado.'); log('❌ Remove HW: wrapper não encontrado.'); return; }
+
+    var ta = parRoot.querySelector('[data-drupal-selector="'+DATA_SEL_BASENAME+'"]')
+          || parRoot.querySelector('[data-drupal-selector^="'+DATA_SEL_BASENAME+'"]')
+          || parRoot.querySelector('textarea[id^="'+DATA_SEL_BASENAME+'"]');
+    if(!ta){ console.warn('[health-warning-delete] Textarea não encontrada.'); log('❌ Remove HW: textarea não encontrada.'); return; }
+
+    const getEditorText = function(){
+      const wrap = ta.closest('.js-form-type-textarea') || parRoot;
+      const ckEditable = wrap && wrap.querySelector('.ck-editor__editable');
+      if(ckEditable){
+        const tmp=document.createElement('div');
+        tmp.innerHTML = ckEditable.innerHTML || '';
+        return (tmp.textContent||'').replace(/\u00A0/g,' ').trim();
+      }
+      return (ta.value||'').replace(/\u00A0/g,' ').trim();
+    };
+    const empty=function(s){ return !s || !s.replace(/\s+/g,'').length; };
+
+    if(!empty(getEditorText())){ log('ℹ️ Remove HW: bloco NÃO está vazio — nada será deletado.'); return; }
+
+    const dropdown = parTop.querySelector('.paragraphs-dropdown');
+    const toggle = dropdown && dropdown.querySelector('.paragraphs-dropdown-toggle');
+    if(toggle && dropdown && !dropdown.classList.contains('is-open')){ try{ toggle.click(); }catch(e){} }
+
+    const removeBtn =
+         parTop.querySelector('#field-components-'+PAR_IDX+'-remove')
+      || parTop.querySelector('[id^="field-components-'+PAR_IDX+'-remove"]')
+      || parTop.querySelector('[data-drupal-selector^="field-components-'+PAR_IDX+'-remove"]')
+      || parTop.querySelector('input[name="field_components_'+PAR_IDX+'_remove"]')
+      || parTop.querySelector('.paragraphs-dropdown-actions input[type="submit"][name$="_remove"]')
+      || parTop.querySelector('input[type="submit"][name$="_remove"]');
+    if(!removeBtn){ console.warn('[health-warning-delete] Botão remover não encontrado.'); log('❌ Remove HW: botão remover não encontrado.'); return; }
+
+    try{ removeBtn.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+    removeBtn.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window}));
+    removeBtn.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window}));
+    removeBtn.click();
+
+    await waitDOMChange(12000);
+
+    const stillTop =
+         document.querySelector('#field-components-'+PAR_IDX+'-collapse')
+      || document.querySelector('[id^="field-components-'+PAR_IDX+'-collapse"]')
+      || document.querySelector('[data-drupal-selector^="field-components-'+PAR_IDX+'-collapse"]');
+    if(!stillTop) log('✅ Remove HW: paragraph 0 deletado com sucesso.');
+    else log('⚠️ Remove HW: ainda vejo o paragraph. Pode haver validação impedindo.');
+  };
+
+  // Image+text
+  const fillImageText = function(personality, history){
+    const docs=[document];
+    selectAll('iframe').forEach(function(f){ try{ if(f.contentDocument) docs.push(f.contentDocument); }catch(e){} });
+
+    const findBlocks=function(doc){
+      return selectAll('.field--name-field-c-sideimagetext-summary',doc).map(function(w){
         const ed = w.querySelector('.ck-editor__editable[contenteditable="true"]');
         const ta = w.querySelector('textarea[name*="[field_c_sideimagetext_summary]"][name$="[0][value]"]');
         const html = ed ? ed.innerHTML : (ta ? ta.value : '');
         const m = html.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
-        const title = m ? m[1].replace(/<[^>]+>/g, '').trim() : '';
-        return { doc, wrap: w, ed, ta, titleRaw: m ? m[0] : '', rest: html.replace(m ? m[0] : '', '') };
+        const title = m ? m[1].replace(/<[^>]+>/g,'').trim() : '';
+        return { doc:doc, wrap:w, ed:ed, ta:ta, titleRaw: m?m[0]:'', rest: html.replace(m?m[0]:'','') };
       });
-
-    const set = (blk, body) => {
-      if (!blk) return;
-      const html = (blk.titleRaw || '') + toHtml(body || '');
-      if (blk.ed) setCKEHtml(blk.ed, html);
-      else if (blk.ta) { blk.ta.value = html; fire(blk.ta); }
     };
 
-    let b1 = null, b2 = null;
-    docs.forEach(d => {
-      findBlocks(d).forEach(b => {
-        const t = b.titleRaw.toLowerCase();
-        if (/osobn/.test(t)) b1 = b;
-        if (/p[oô]vod/.test(t)) b2 = b;
+    const set=function(blk,body){
+      if(!blk) return;
+      const html=(blk.titleRaw||'') + toHtml(body||'');
+      if(blk.ed) setCKEHtml(blk.ed,html);
+      else if(blk.ta){ blk.ta.value=html; fire(blk.ta); }
+    };
+
+    var b1=null,b2=null;
+    docs.forEach(function(d){
+      findBlocks(d).forEach(function(b){
+        const t=(b.titleRaw||'').toLowerCase();
+        if(/osobn/.test(t)) b1=b;
+        if(/p[oô]vod/.test(t)) b2=b;
       });
     });
 
-    if (b1) set(b1, personality);
-    if (b2) set(b2, history);
-
-    log(`✅ Image+text: ${(b1 ? 'Osobnosť' : '—')}/${(b2 ? 'Pôvod' : '—')}`);
+    if(b1) set(b1,personality);
+    if(b2) set(b2,history);
+    log('✅ Image+text: ' + (b1?'Osobnosť':'—') + '/' + (b2?'Pôvod':'—'));
   };
 
-  /* ---------- Accordion (limpa + preenche 5) ---------- */
-  const accClear = async () => {
-    let api = 0, fb = 0;
-    accEditors().forEach(ta => {
-      try {
-        const ed = findCKEByTextarea(ta);
-        if (ed?.setData) {
-          ed.setData('');
-          api++;
-        } else {
-          ta.value = '';
-          ta.setAttribute('data-editor-value-is-changed', 'true');
-          fire(ta);
-          const ediv = ta.closest('.field--type-text-long')?.querySelector('.ck-editor__editable');
-          if (ediv) ediv.innerHTML = '';
+  // Accordion fill
+  const accClear = async function(){
+    var api=0, fb=0;
+    accEditors().forEach(function(ta){
+      try{
+        const ed=findCKEByTextarea(ta);
+        if(ed && ed.setData){ ed.setData(''); api++; }
+        else{
+          ta.value=''; ta.setAttribute('data-editor-value-is-changed','true'); fire(ta);
+          const ediv = ta.closest('.field--type-text-long') && ta.closest('.field--type-text-long').querySelector('.ck-editor__editable');
+          if(ediv) ediv.innerHTML='';
           fb++;
         }
-      } catch (e) {}
+      }catch(e){}
     });
     await delay(150);
-    return { api, fb, tot: accEditors().length };
+    return { api:api, fb:fb, tot: accEditors().length };
   };
 
-  const accSetOne = (ta, html) => {
-    const ed = findCKEByTextarea(ta);
-    if (ed?.setData) {
-      ed.setData(html);
-    } else {
-      const ediv = ta.closest('.field--type-text-long')?.querySelector('.ck-editor__editable');
-      if (ediv) ediv.innerHTML = html;
-      ta.value = html;
-      ta.setAttribute('data-editor-value-is-changed', 'true');
+  const accSetOne = function(ta,html){
+    const ed=findCKEByTextarea(ta);
+    if(ed && ed.setData){ ed.setData(html); }
+    else{
+      const ediv=ta.closest('.field--type-text-long') && ta.closest('.field--type-text-long').querySelector('.ck-editor__editable');
+      if(ediv) ediv.innerHTML=html;
+      ta.value=html; ta.setAttribute('data-editor-value-is-changed','true');
     }
     fire(ta);
   };
 
-  const fillAccordion = async (items) => {
-    const info = await accClear();
-    log(`↻ Accordion limpo: via API ${info.api} | fallback ${info.fb} | total ${info.tot}`);
-
-    const tas = accEditors();
-
-    const toHtmlAcc = (s) => {
-      s = (s || '').trim();
-      if (!s) s = '[delete block]';
-      const parts = s.split(/\n{2,}/).map(x => x.trim()).filter(Boolean);
-      return (parts.length ? parts : [''])
-        .map(p => '<p>' + enc(p).replace(/\n/g, '<br>') + '</p>').join('');
+  const fillAccordion = async function(items){
+    const info=await accClear();
+    log('↻ Accordion limpo: via API ' + info.api + ' | fallback ' + info.fb + ' | total ' + info.tot);
+    const tas=accEditors();
+    const toHtmlAcc=function(s){
+      s=(s||'').trim(); if(!s) s='[delete block]';
+      const parts=s.split(/\n{2,}/).map(function(x){return x.trim();}).filter(Boolean);
+      return (parts.length?parts:['']).map(function(p){ return '<p>'+enc(p).replace(/\n/g,'<br>')+'</p>'; }).join('');
     };
-
-    const n = Math.min(items.length, tas.length);
-    for (let i = 0; i < n; i++) {
-      accSetOne(tas[i], toHtmlAcc(items[i]));
-      await delay(40);
-    }
+    const n=Math.min(items.length, tas.length);
+    for(var i=0;i<n;i++){ accSetOne(tas[i], toHtmlAcc(items[i])); await delay(40); }
     log('✅ Accordion preenchido');
   };
 
-  /* ---------- Quick Links ---------- */
-  const fillQuickLinks = (raw) => {
+  // Quick Links
+  const fillQuickLinks = function(raw){
     raw = norm(raw);
-    const lines = raw.split('\n').map(x => x.trim()).filter(Boolean);
+    const lines = raw.split('\n').map(function(x){return x.trim();}).filter(Boolean);
+    const w = (select('[id$="subform-field-c-quicklinks-links-wrapper"]') && select('[id$="subform-field-c-quicklinks-links-wrapper"]').closest('[id^="edit-field-components-"][id$="-subform"]')) || document;
+    const t = (w.querySelector('textarea[data-drupal-selector*="field-c-quicklinks-title"]') || w.querySelector('input[data-drupal-selector*="field-c-quicklinks-title"]'));
 
-    const w = (select('[id$="subform-field-c-quicklinks-links-wrapper"]')?.closest('[id^="edit-field-components-"][id$="-subform"]')) || document;
-    const t = w.querySelector('textarea[data-drupal-selector*="field-c-quicklinks-title"]') ||
-              w.querySelector('input[data-drupal-selector*="field-c-quicklinks-title"]');
+    const rows = selectAll('#field-c-quicklinks-links-values tbody tr', w).map(function(tr){
+      return { t: tr.querySelector('input[name$="[title]"]'), u: tr.querySelector('input[name$="[uri]"]') };
+    }).filter(function(o){ return o.t && o.u; });
 
-    const rows = selectAll('#field-c-quicklinks-links-values tbody tr', w)
-      .map(tr => ({
-        t: tr.querySelector('input[name$="[title]"]'),
-        u: tr.querySelector('input[name$="[uri]"]')
-      }))
-      .filter(o => o.t && o.u);
+    if(t){ t.value=''; fire(t); }
+    rows.forEach(function(o){ o.t.value=''; o.u.value=''; fire(o.t); fire(o.u); });
 
-    if (t) { t.value = ''; fire(t); }
-    rows.forEach(o => {
-      o.t.value = ''; o.u.value = '';
-      fire(o.t); fire(o.u);
-    });
-
-    if (!lines.length) {
-      log('✅ Quick Links limpos (sem conteúdo)');
-      return;
-    }
+    if(!lines.length){ log('✅ Quick Links limpos (sem conteúdo)'); return; }
 
     const title = lines.shift();
-    if (t) { t.value = title || ''; fire(t); }
+    if(t){ t.value=title||''; fire(t); }
 
-    let k = 0;
-    lines.forEach((ln, i) => {
-      if (i >= rows.length) return;
-      const m = ln.match(/^([^:]+):\s*(.+)$/);
-      if (!m) return;
+    var k=0;
+    lines.forEach(function(ln,i){
+      if(i>=rows.length) return;
+      const m=ln.match(/^([^:]+):\s*(.+)$/);
+      if(!m) return;
       rows[i].t.value = m[1].trim();
       rows[i].u.value = m[2].trim();
       fire(rows[i].t); fire(rows[i].u);
       k++;
     });
-    log(`✅ Quick Links: título + ${k} link(s)`);
+    log('✅ Quick Links: título + ' + k + ' link(s)');
   };
-// -- Delete Quick Links paragraph (PAR_IDX=4) --
-const deleteQuickLinksParagraph = async () => {
-  const PAR_IDX = 4;
 
-  const parTop = document.querySelector(`#edit-field-components-${PAR_IDX}-top`);
-  const parWrap = parTop
-    ? parTop.closest(`[id^="edit-field-components-${PAR_IDX}"]`)
-    : document.querySelector(`[id^="edit-field-components-${PAR_IDX}"]`);
+  // Delete Quick Links (PAR_IDX=4)
+  const deleteQuickLinksParagraph = async function(){
+    const PAR_IDX=4;
+    const parTop = document.querySelector('#edit-field-components-'+PAR_IDX+'-top');
+    const parWrap = parTop ? parTop.closest('[id^="edit-field-components-'+PAR_IDX+'"]') : document.querySelector('[id^="edit-field-components-'+PAR_IDX+'"]');
+    if(!parWrap){ console.warn('[quicklinks-delete] Paragraph não encontrado.'); log('❌ Delete QL: Paragraph não encontrado.'); return; }
+    const uri = document.querySelector('#edit-field-components-'+PAR_IDX+'-subform-field-c-quicklinks-links-0-uri');
+    const title = document.querySelector('#edit-field-components-'+PAR_IDX+'-subform-field-c-quicklinks-links-0-title');
+    if(!uri || !title){ console.warn('[quicklinks-delete] Campos do primeiro link não encontrados.'); log('❌ Delete QL: campos do primeiro link não encontrados.'); return; }
+    const empty=function(el){ return !el.value || !el.value.trim(); };
+    if(!(empty(uri) && empty(title))){ log('ℹ️ Delete QL: primeiro Quick Link NÃO está vazio — nada será deletado.'); return; }
 
-  if (!parWrap) { console.warn('[quicklinks-delete] Paragraph não encontrado.'); log('❌ Delete QL: Paragraph não encontrado.'); return; }
+    const dropdown = parTop && parTop.querySelector('.paragraphs-dropdown');
+    const toggle = dropdown && dropdown.querySelector('.paragraphs-dropdown-toggle');
+    if(toggle && dropdown && !dropdown.classList.contains('is-open')){ try{ toggle.click(); }catch(e){} }
 
-  const uri   = document.querySelector(`#edit-field-components-${PAR_IDX}-subform-field-c-quicklinks-links-0-uri`);
-  const title = document.querySelector(`#edit-field-components-${PAR_IDX}-subform-field-c-quicklinks-links-0-title`);
-  if (!uri || !title) { console.warn('[quicklinks-delete] Campos do primeiro link não encontrados.'); log('❌ Delete QL: campos do primeiro link não encontrados.'); return; }
+    const removeBlockBtn =
+         (parTop && parTop.querySelector('#field-components-4-remove'))
+      || (parTop && parTop.querySelector('[data-drupal-selector="field-components-4-remove"]'))
+      || (parTop && parTop.querySelector('input[name="field_components_4_remove"]'));
+    if(!removeBlockBtn){ console.warn('[quicklinks-delete] Botão de remoção não encontrado.'); log('❌ Delete QL: botão de remoção não encontrado.'); return; }
 
-  const empty = el => !el.value || !el.value.trim();
-  if (!(empty(uri) && empty(title))) { log('ℹ️ Delete QL: primeiro Quick Link NÃO está vazio — nada será deletado.'); return; }
+    try{ removeBlockBtn.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+    removeBlockBtn.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window}));
+    removeBlockBtn.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window}));
+    removeBlockBtn.click();
 
-  const dropdown = parTop?.querySelector('.paragraphs-dropdown');
-  const toggle   = dropdown?.querySelector('.paragraphs-dropdown-toggle');
-  if (toggle && dropdown && !dropdown.classList.contains('is-open')) { try { toggle.click(); } catch {} }
+    await waitDOMChange(12000);
 
-  const removeBlockBtn =
-    parTop?.querySelector('#field-components-4-remove') ||
-    parTop?.querySelector('[data-drupal-selector="field-components-4-remove"]') ||
-    parTop?.querySelector('input[name="field_components_4_remove"]');
+    const stillThere = document.querySelector('#edit-field-components-'+PAR_IDX+'-top');
+    if(!stillThere) log('✅ Delete QL: Paragraph Quick Links deletado com sucesso.');
+    else log('⚠️ Delete QL: Ainda vejo o Paragraph. Pode haver validação impedindo a remoção.');
+  };
 
-  if (!removeBlockBtn) { console.warn('[quicklinks-delete] Botão de remoção não encontrado.'); log('❌ Delete QL: botão de remoção não encontrado.'); return; }
+  // Meta
+  const fillMeta = function(alias, mtitle, mdesc){
+    const elUrl = select('[data-drupal-selector="edit-path-0-alias"]') || select('#edit-path-0-alias') || select('input[name="path[0][alias]"]');
+    const elTitle = select('[data-drupal-selector="edit-field-meta-tags-0-basic-title"]') || select('#edit-field-meta-tags-0-basic-title') || select('input[name="field_meta_tags[0][basic][title]"]');
+    const elOgTitle = select('[data-drupal-selector="edit-field-meta-tags-0-open-graph-og-title"]') || select('#edit-field-meta-tags-0-open-graph-og-title') || select('input[name="field_meta_tags[0][open_graph][og_title]"]');
+    const elDesc = select('[data-drupal-selector="edit-field-meta-tags-0-basic-description"]') || select('#edit-field-meta-tags-0-basic-description') || select('textarea[name="field_meta_tags[0][basic][description]"]');
+    const elOgDesc = select('[data-drupal-selector="edit-field-meta-tags-0-open-graph-og-description"]') || select('#edit-field-meta-tags-0-open-graph-og-description') || select('textarea[name="field_meta_tags[0][open_graph][og_description]"]');
 
-  try { removeBlockBtn.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
-  removeBlockBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-  removeBlockBtn.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, view: window }));
-  removeBlockBtn.click();
-
-  await waitDOMChange(12000);
-
-  const stillThere = document.querySelector(`#edit-field-components-${PAR_IDX}-top`);
-  if (!stillThere) log('✅ Delete QL: Paragraph Quick Links deletado com sucesso.');
-  else log('⚠️ Delete QL: Ainda vejo o Paragraph. Pode haver validação impedindo a remoção.');
-};
-
-  /* ---------- Meta (URL + Title + Description) ---------- */
-  const fillMeta = (alias, mtitle, mdesc) => {
-    const elUrl = select('[data-drupal-selector="edit-path-0-alias"]') ||
-                  select('#edit-path-0-alias') ||
-                  select('input[name="path[0][alias]"]');
-
-    const elTitle = select('[data-drupal-selector="edit-field-meta-tags-0-basic-title"]') ||
-                    select('#edit-field-meta-tags-0-basic-title') ||
-                    select('input[name="field_meta_tags[0][basic][title]"]');
-
-    const elOgTitle = select('[data-drupal-selector="edit-field-meta-tags-0-open-graph-og-title"]') ||
-                      select('#edit-field-meta-tags-0-open-graph-og-title') ||
-                      select('input[name="field_meta_tags[0][open_graph][og_title]"]');
-
-    const elDesc = select('[data-drupal-selector="edit-field-meta-tags-0-basic-description"]') ||
-                   select('#edit-field-meta-tags-0-basic-description') ||
-                   select('textarea[name="field_meta_tags[0][basic][description]"]');
-
-    const elOgDesc = select('[data-drupal-selector="edit-field-meta-tags-0-open-graph-og-description"]') ||
-                     select('#edit-field-meta-tags-0-open-graph-og-description') ||
-                     select('textarea[name="field_meta_tags[0][open_graph][og_description]"]');
-
-    if (alias && !/^\/|^https?:/i.test(alias)) alias = '/' + alias;
-
-    [
-      [elUrl, alias],
-      [elTitle, mtitle],
-      [elOgTitle, mtitle],
-      [elDesc, mdesc],
-      [elOgDesc, mdesc]
-    ].forEach(([el, v]) => {
-      if (el) { el.value = v || ''; fire(el); }
+    if(alias && !/^\/|^https?:/i.test(alias)) alias='/'+alias;
+    [[elUrl,alias],[elTitle,mtitle],[elOgTitle,mtitle],[elDesc,mdesc],[elOgDesc,mdesc]].forEach(function(pair){
+      var el=pair[0], v=pair[1];
+      if(el){ el.value=v||''; fire(el); }
     });
-
     log('✅ Meta (URL / titles / descriptions)');
   };
 
-  /* ---------- Glue: parse + run ---------- */
+  // Glue
   const COLS = [
-    'SK Breed',
-    'SK DESCRIPTON',
-    'SK CHARAKTERISTIC',
-    'Machine name',
-    'SK HEALTH',
-    'SK PERSONALITY',
-    'SK HISTORY',
-    'Cvičenie',
-    'Ideálny majiteľ',
-    'Výživa',
-    'Starostlivosť o srsť',
-    'Vhodnosť pre rodinný život',
-    'SK QUICK LINKS',
-    'SK URL',
-    'SK META TITLE',
-    'SK META DESCRIPTION'
+    'SK Breed','SK DESCRIPTON','SK CHARAKTERISTIC','Machine name',
+    'SK HEALTH','SK PERSONALITY','SK HISTORY','Cvičenie',
+    'Ideálny majiteľ','Výživa','Starostlivosť o srsť','Vhodnosť pre rodinný život',
+    'SK QUICK LINKS','SK URL','SK META TITLE','SK META DESCRIPTION'
   ];
 
-  const preview = (arr) => {
-    const kv = COLS.map((k, i) => `• ${k}: ${ (arr[i] || '').slice(0,120).replace(/\n/g, ' ⏎ ') }`);
+  const preview = function(arr){
+    const kv = COLS.map(function(k,i){
+      return '• ' + k + ': ' + String(arr[i]||'').slice(0,120).replace(/\n/g,' ⏎ ');
+    });
     UI.out.textContent = 'Pré-visualização (truncada):\n' + kv.join('\n');
   };
 
-  UI.btnParse.onclick = () => {
-    const arr = parseTSV(UI.ta.value || '');
+  UI.btnParse.onclick = function(){
+    const arr = parseTSV(UI.ta.value||'');
     preview(arr);
   };
-UI.btnDeleteQL.onclick = async () => {
-  UI.out.textContent = '';
-  log('↻ Delete QL: verificando estado do primeiro link…');
-  try {
-    await deleteQuickLinksParagraph();
-  } catch (e) {
-    log('⚠️ Delete QL: ' + (e?.message || e));
-  }
-};
 
-  UI.btnRun.onclick = async () => {
+  UI.btnDeleteHW.onclick = async function(){
     UI.out.textContent = '';
-    const row = parseTSV(UI.ta.value || '');
-    if (row.filter(x => x !== '').length === 0) {
-      log('Cole a linha TSV.');
-      return;
-    }
+    log('↻ Remove HW: checando se o bloco está vazio…');
+    try{ await deleteHealthWarningParagraph(); }
+    catch(e){ log('⚠️ Remove HW: ' + (e && e.message ? e.message : e)); }
+  };
+
+  UI.btnDeleteQL.onclick = async function(){
+    UI.out.textContent = '';
+    log('↻ Delete QL: verificando estado do primeiro link…');
+    try{ await deleteQuickLinksParagraph(); }
+    catch(e){ log('⚠️ Delete QL: ' + (e && e.message ? e.message : e)); }
+  };
+
+  UI.btnRun.onclick = async function(){
+    UI.out.textContent='';
+    const row = parseTSV(UI.ta.value||'');
+    if(row.filter(function(x){ return x!==''; }).length===0){ log('Cole a linha TSV.'); return; }
     preview(row);
 
-    /* 1) Abrir accords e ESPERAR */
     await openAccordionsAndWait();
 
-    /* 2) Preencher demais campos */
-    const [
-      breed, desc, carac, machine, health,
-      personality, history,
-      acc1, acc2, acc3, acc4, acc5,
-      quicklinks, url, mtitle, mdesc
-    ] = row;
+    const breed=row[0], desc=row[1], carac=row[2], machine=row[3], health=row[4],
+          personality=row[5], history=row[6],
+          acc1=row[7], acc2=row[8], acc3=row[9], acc4=row[10], acc5=row[11],
+          quicklinks=row[12], url=row[13], mtitle=row[14], mdesc=row[15];
 
-    try { fillTitleDescMachine(breed, desc, machine); }
-    catch (e) { log('⚠️ H1/Description/Machine: ' + e.message); }
-
-    try { markCaracteristicas(carac); }
-    catch (e) { log('⚠️ Características: ' + e.message); }
-
-    try { fillHealth(health); }
-    catch (e) { log('⚠️ Health warning: ' + e.message); }
-
-    try { fillImageText(personality, history); }
-    catch (e) { log('⚠️ Image+text: ' + e.message); }
-
-    /* 3) Só agora: ACCORDION (limpar + preencher) */
-    try { await fillAccordion([acc1, acc2, acc3, acc4, acc5]); }
-    catch (e) { log('⚠️ Accordion: ' + e.message); }
-
-    try { fillQuickLinks(quicklinks); }
-    catch (e) { log('⚠️ Quick Links: ' + e.message); }
-
-    try { fillMeta(url, mtitle, mdesc); }
-    catch (e) { log('⚠️ Meta: ' + e.message); }
+    try{ fillTitleDescMachine(breed,desc,machine); } catch(e){ log('⚠️ H1/Description/Machine: ' + e.message); }
+    try{ markCaracteristicas(carac); } catch(e){ log('⚠️ Características: ' + e.message); }
+    try{ fillHealth(health); } catch(e){ log('⚠️ Health warning: ' + e.message); }
+    try{ fillImageText(personality, history); } catch(e){ log('⚠️ Image+text: ' + e.message); }
+    try{ await fillAccordion([acc1,acc2,acc3,acc4,acc5]); } catch(e){ log('⚠️ Accordion: ' + e.message); }
+    try{ fillQuickLinks(quicklinks); } catch(e){ log('⚠️ Quick Links: ' + e.message); }
+    try{ fillMeta(url, mtitle, mdesc); } catch(e){ log('⚠️ Meta: ' + e.message); }
 
     log('🎉 Concluído. Verifique os campos antes de salvar.');
   };
 
   const sel = window.getSelection && window.getSelection().toString();
-  if (sel && /\t/.test(sel)) UI.ta.value = sel;
+  if(sel && /\t/.test(sel)) UI.ta.value = sel;
 })();
