@@ -13,9 +13,12 @@
   <button id="nppe-x" style="padding:6px 10px;border:1px solid #ccc;border-radius:8px;background:#f5f5f5;cursor:pointer">Fechar</button>
 </div>
 <textarea id="nppe-tsv" placeholder="Cole aqui a LINHA (com TABs; campos entre aspas podem ter múltiplas linhas)" style="width:100%;height:170px;border:1px solid #ddd;border-radius:8px;padding:10px;resize:vertical;box-sizing:border-box"></textarea>
-<div style="display:flex;gap:8px;margin:8px 0 10px;">
-  <button id="nppe-parse" style="padding:8px 12px;border:0;border-radius:8px;background:#555;color:#fff;cursor:pointer">Pré-visualizar</button>
-  <button id="nppe-run" style="padding:8px 12px;border:0;border-radius:8px;background:#0b5;color:#fff;cursor:pointer">Aplicar em tudo</button>
+ <div style="display:flex;gap:8px;margin:8px 0 10px;">
+   <button id="nppe-parse" style="padding:8px 12px;border:0;border-radius:8px;background:#555;color:#fff;cursor:pointer">Pré-visualizar</button>
+   <button id="nppe-run" style="padding:8px 12px;border:0;border-radius:8px;background:#0b5;color:#fff;cursor:pointer">Aplicar em tudo</button>
+   <button id="nppe-save" style="padding:8px 12px;border:0;border-radius:8px;background:#06c;color:#fff;cursor:pointer">Salvar (Uložiť)</button>
+ </div>
+
 </div>
 <pre id="nppe-out" style="margin:0;white-space:pre-wrap;max-height:300px;overflow:auto;background:#fafafa;border:1px dashed #ddd;padding:8px;border-radius:8px"></pre>
 `;
@@ -28,7 +31,8 @@
       ta: bx.querySelector('#nppe-tsv'),
       out: bx.querySelector('#nppe-out'),
       btnParse: bx.querySelector('#nppe-parse'),
-      btnRun: bx.querySelector('#nppe-run')
+      btnRun: bx.querySelector('#nppe-run'),
+      btnSave: bx.querySelector('#nppe-save')
     };
   })();
 
@@ -54,6 +58,23 @@
   };
 
   const delay = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // --- Clicar no botão "Uložiť" (Salvar) ---
+const clickSubmit = async () => {
+  const btn = document.querySelector('input[data-drupal-selector="edit-submit"]');
+  if (!btn) {
+    log('⚠️ Botão "Save" não encontrado.');
+    return;
+  }
+  try { btn.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
+  // dispara eventos como um clique real
+  btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+  setTimeout(() => { if (typeof btn.click === 'function') btn.click(); }, 80);
+  log('💾 Clique em "Save" disparado.');
+};
+
+// amarra o botão do UI
+UI.btnSave.onclick = clickSubmit;
 
   const parseTSV = (raw) => {
     raw = norm(raw).trim();
