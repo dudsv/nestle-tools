@@ -1,0 +1,587 @@
+(() => {
+  const UI = (() => {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center';
+
+    const bx = document.createElement('div');
+    bx.style.cssText = 'background:#fff;max-width:min(980px,96vw);width:min(980px,96vw);border-radius:14px;box-shadow:0 12px 36px rgba(0,0,0,.35);padding:14px;font:13px/1.45 system-ui,Segoe UI,Roboto,Arial';
+
+    bx.innerHTML = `
+<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:6px">
+  <b>NPPE – Master Importer</b>
+  <div style="opacity:.7">Cole a linha TSV com 16 colunas (SK Breed … SK META DESCRIPTION)</div>
+  <button id="nppe-x" style="padding:6px 10px;border:1px solid #ccc;border-radius:8px;background:#f5f5f5;cursor:pointer">Fechar</button>
+</div>
+<textarea id="nppe-tsv" placeholder="Cole aqui a LINHA (com TABs; campos entre aspas podem ter múltiplas linhas)" style="width:100%;height:170px;border:1px solid #ddd;border-radius:8px;padding:10px;resize:vertical;box-sizing:border-box"></textarea>
+<div style="display:flex;gap:8px;margin:8px 0 10px;">
+  <button id="nppe-parse" style="padding:8px 12px;border:0;border-radius:8px;background:#555;color:#fff;cursor:pointer">Pré-visualizar</button>
+  <button id="nppe-run" style="padding:8px 12px;border:0;border-radius:8px;background:#0b5;color:#fff;cursor:pointer">Aplicar em tudo</button>
+</div>
+<pre id="nppe-out" style="margin:0;white-space:pre-wrap;max-height:300px;overflow:auto;background:#fafafa;border:1px dashed #ddd;padding:8px;border-radius:8px"></pre>
+`;
+    ov.appendChild(bx);
+    document.body.appendChild(ov);
+    bx.querySelector('#nppe-x').onclick = () => ov.remove();
+
+    return {
+      ov,
+      ta: bx.querySelector('#nppe-tsv'),
+      out: bx.querySelector('#nppe-out'),
+      btnParse: bx.querySelector('#nppe-parse'),
+      btnRun: bx.querySelector('#nppe-run')
+    };
+  })();
+
+  const log = (m) => {
+    UI.out.textContent += (UI.out.textContent ? '\n' : '') + m;
+  };
+
+  const norm = (s) => String(s ?? '')
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\r\n/g, '\n');
+
+  const enc = (t) => String(t)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  const fire = (el) => {
+    if (!el) return;
+    el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new Event('blur', { bubbles: true }));
+  };
+
+  const delay = (ms) => new Promise(r => setTimeout(r, ms));
+
+  const parseTSV = (raw) => {
+    raw = norm(raw).trim();
+    const out = [];
+    let cur = '';
+    let q = false;
+
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw[i];
+      if (c === '"') {
+        const nxt = raw[i + 1];
+        if (q && nxt === '"') {
+          cur += '"';
+          i++;
+          continue;
+        }
+        q = !q;
+        continue;
+      }
+      if (!q && c === '\t') {
+        out.push(cur);
+        cur = '';
+        continue;
+      }
+      cur += c;
+    }
+    out.push(cur);
+    while (out.length < 16) out.push('');
+    return out.slice(0, 16).map(s => {
+      s = s.replace(/^\n+|\n+$/g, '');
+      if (/^['"“„«‘]/.test(s) && /['"”„»’]$/.test(s)) s = s.slice(1, -1).trim();
+      return s;
+    });
+  };
+
+  const select = (q, r = document) => r.querySelector(q);
+  const selectAll = (q, r = document) => Array.from(r.querySelectorAll(q));
+  const ckPool = () => (window.Drupal && Drupal.CKEditor5Instances) || null;
+
+  const findCKEByTextarea = (ta) => {
+    const pool = ckPool();
+    if (pool) {
+      try {
+        const id = ta.getAttribute('data-ckeditor5-id') || ta.dataset.ckeditor5Id;
+        if (typeof pool.get === 'function') {
+          return pool.get(id) || pool.get(ta.id) || null;
+        } else {
+          return pool[id] || pool[ta.id] || null;
+        }
+      } catch (e) {}
+    }
+    return null;
+  };
+
+  const setCKEHtml = (editable, html) => {
+    try {
+      const ta = editable?.closest('.field--type-text-long,.js-form-item')?.querySelector('textarea.js-text-full[data-ckeditor5-id]');
+      const ed = ta ? findCKEByTextarea(ta) : null;
+
+      if (ed?.setData) {
+        ed.setData(html);
+      } else {
+        if (editable) editable.innerHTML = html;
+        if (ta) {
+          ta.value = html;
+          ta.setAttribute('data-editor-value-is-changed', 'true');
+        }
+      }
+      if (ta) fire(ta);
+      if (editable) fire(editable);
+    } catch (e) {
+      console.warn('CK set error', e);
+    }
+  };
+
+  const toHtml = (raw) => {
+    raw = norm(raw);
+    if (!raw) return '';
+    if (/<\w|<\/\w|<br/gi.test(raw)) return raw;
+    const blocks = raw.split(/\n{2,}/).map(x => x.trim()).filter(Boolean);
+    return blocks.map(p => '<p>' + enc(p).replace(/\n/g, '<br>') + '</p>').join('');
+  };
+
+  /* ---------- ACCORDION OPENNER (com espera) ---------- */
+  const accRoot = () => document.querySelector('#edit-field-components-3-subform') || document;
+  const accEditors = () => selectAll('.paragraph-widget--c-text textarea.js-text-full[data-ckeditor5-id]', accRoot());
+
+  const waitAccReady = async (timeout = 120000, min = 5) => {
+    const t0 = Date.now();
+    let last = -1, stable = 0;
+    for (;;) {
+      const list = accEditors();
+      const pool = ckPool();
+      let ok = 0;
+      list.forEach(ta => {
+        const ed = findCKEByTextarea(ta);
+        if (ed?.setData) ok++;
+      });
+      if (list.length >= min && ok >= Math.min(min, list.length)) {
+        if (list.length === last) stable++;
+        else { stable = 0; last = list.length; }
+        if (stable >= 2) break;
+      }
+      if (Date.now() - t0 > timeout) break;
+      await delay(500);
+    }
+    return accEditors().length;
+  };
+
+  const openAccordionsAndWait = async () => {
+    try {
+      const btns = Array.from(document.querySelectorAll('.paragraphs-icon-button-edit:not(.paragraphs-previewer)'));
+      if (!btns.length) {
+        log('↗️ Accordion Openner: nenhum botão encontrado');
+        return;
+      }
+      for (let i = 0; i < btns.length; i++) {
+        btns[i].dispatchEvent(new Event('mousedown'));
+        await delay(4500);
+      }
+      const n = await waitAccReady(120000, 5);
+      log('↗️ Accordion Openner concluído. Editores detectados: ' + n);
+    } catch (e) {
+      log('⚠️ Accordion Openner: ' + e.message);
+    }
+  };
+
+  /* ---------- H1 + Description + Machine name ---------- */
+  const fillTitleDescMachine = (title, desc, machine) => {
+    const titleEl = select('#edit-title-0-value') || select('input[name="title[0][value]"]');
+    if (titleEl) { titleEl.value = title || ''; fire(titleEl); }
+
+    const mainEd = select('.ck-editor__editable[aria-label*="main" i]') || select('.ck-editor__editable');
+    if (mainEd) setCKEHtml(mainEd, toHtml(desc || ''));
+
+    const mach = select('#edit-field-nppe-bs-machine-name-0-value') || select('input[name="field_nppe_bs_machine_name[0][value]"]');
+    if (mach) { mach.value = (machine || ''); fire(mach); }
+
+    log('✅ H1/Description/Machine name');
+  };
+
+  /* ---------- Características (checkboxes) ---------- */
+  const markCaracteristicas = (block) => {
+    const normL = s => (s || '').toString().toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/g, ' ').trim();
+
+    const toParts = t => String(t).split('/').map(p => normL(p)).map(x => x.trim()).filter(Boolean);
+    const inc = (a, b) => a && b && (a.includes(b) || b.includes(a));
+    const cover = (A, B) => {
+      if (!A.length) return 0;
+      let inter = 0;
+      const SB = new Set(B);
+      A.forEach(w => { if (SB.has(w)) inter++; });
+      return inter / A.length;
+    };
+    const toks = s => normL(s).split(' ').filter(w => w.length >= 3);
+    const score = (lineParts, label) => {
+      const Lfull = label.full;
+      const Lparts = label.parts.length ? label.parts : [label.full];
+      const lineTok = toks(lineParts.join(' '));
+      const labTok = toks(Lfull);
+
+      let sFull = inc(Lfull, lineParts.join(' ')) ? 1 : cover(lineTok, labTok);
+
+      let hits = [];
+      lineParts.forEach(p => {
+        const tp = toks(p);
+        let best = 0;
+        for (const lp of Lparts) {
+          if (inc(p, lp)) { best = 1; break; }
+          else { best = Math.max(best, cover(tp, toks(lp))); }
+        }
+        hits.push(best);
+      });
+      hits.sort((a, b) => b - a);
+      return Math.max(sFull, hits[0] || 0);
+    };
+
+    const labels = [];
+    const groups = new Map();
+    let gid = 0;
+
+    selectAll('#edit-field-nppe-bs-characteristic,.form-checkboxes').forEach(cont => {
+      selectAll(':scope > .js-form-item', cont).forEach(div => {
+        const lab = div.querySelector('label.option');
+        if (!lab) return;
+        const raw = (lab.textContent || '').trim();
+        const input = div.querySelector('input[type="checkbox"]');
+        const isHeader = (input && input.disabled) || /^\-\s*[^-]/.test(raw);
+        if (isHeader) {
+          gid++;
+          if (!groups.has(gid)) groups.set(gid, []);
+          return;
+        }
+        const id = lab.getAttribute('for');
+        const inp = id ? document.getElementById(id) : (input || null);
+        const entry = { label: lab, full: normL(raw), parts: toParts(raw), input: inp, gid };
+        labels.push(entry);
+        if (inp) {
+          if (!groups.has(gid)) groups.set(gid, []);
+          groups.get(gid).push(inp);
+        }
+      });
+    });
+
+    const uncheckGroup = (gid, except) => {
+      (groups.get(gid) || []).forEach(el => {
+        if (el !== except && el.checked && !el.disabled) {
+          el.checked = false; fire(el);
+        }
+      });
+    };
+
+    let marked = 0;
+    const lines = norm(block || '').split('\n').map(s => s.trim()).filter(Boolean);
+    lines.forEach(line => {
+      let parts = toParts(line);
+      if (!parts.length) parts = [normL(line)];
+      let best = null, sc = 0;
+      for (const lb of labels) {
+        const s = score(parts, lb);
+        if (s > sc) { sc = s; best = lb; }
+        if (s === 1) break;
+      }
+      if (best && best.input && !best.input.disabled) {
+        uncheckGroup(best.gid, best.input);
+        if (!best.input.checked) {
+          best.input.checked = true;
+          fire(best.input);
+          marked++;
+        }
+      }
+    });
+    log('✅ Características marcadas: ' + marked);
+  };
+
+  /* ---------- Health warning drop down ---------- */
+  const fillHealth = (raw) => {
+    raw = norm(raw);
+    const lines = raw.split('\n').filter(x => x.trim().length);
+    const title = lines.shift()?.trim() || '';
+    const bullets = [];
+    const paras = [];
+
+    lines.forEach(l => {
+      /^\s*[-–—•]\s+/.test(l) ? bullets.push(l.replace(/^\s*[-–—•]\s+/, '')) : paras.push(l);
+    });
+
+    const pHtml = paras.length ? ('<p>' + enc(paras.join('\n')).replace(/\n/g, '<br>&nbsp;') + '</p>') : '';
+    const ul = bullets.length ? ('<ul>' + bullets.map(v => '<li>' + enc(v) + '<br>&nbsp;</li>').join('') + '</ul>') : '';
+
+    const titleInput =
+      select('[data-drupal-selector$="subform-field-health-warning-title-0-value"]') ||
+      select('input[name*="[field_health_warning_title]"]');
+
+    const editor =
+      select('.field--name-field-health-warning-description .ck-editor__editable[contenteditable]') ||
+      select('.ck-editor__editable[contenteditable]');
+
+    const hiddenTA =
+      select('textarea[data-drupal-selector$="subform-field-health-warning-description-0-value"]') ||
+      select('textarea[name*="[field_health_warning_description]"]');
+
+    if (titleInput) { titleInput.value = title; fire(titleInput); }
+    if (editor) {
+      setCKEHtml(editor, pHtml + ul);
+      if (hiddenTA) {
+        hiddenTA.value = pHtml + ul;
+        fire(hiddenTA);
+      }
+    }
+    log('✅ Health warning');
+  };
+
+  /* ---------- Image+text (Osobnosť & Pôvod) ---------- */
+  const fillImageText = (personality, history) => {
+    const docs = [document];
+    selectAll('iframe').forEach(f => {
+      try { f.contentDocument && docs.push(f.contentDocument); } catch (e) {}
+    });
+
+    const findBlocks = (doc) =>
+      selectAll('.field--name-field-c-sideimagetext-summary', doc).map(w => {
+        const ed = w.querySelector('.ck-editor__editable[contenteditable="true"]');
+        const ta = w.querySelector('textarea[name*="[field_c_sideimagetext_summary]"][name$="[0][value]"]');
+        const html = ed ? ed.innerHTML : (ta ? ta.value : '');
+        const m = html.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+        const title = m ? m[1].replace(/<[^>]+>/g, '').trim() : '';
+        return { doc, wrap: w, ed, ta, titleRaw: m ? m[0] : '', rest: html.replace(m ? m[0] : '', '') };
+      });
+
+    const set = (blk, body) => {
+      if (!blk) return;
+      const html = (blk.titleRaw || '') + toHtml(body || '');
+      if (blk.ed) setCKEHtml(blk.ed, html);
+      else if (blk.ta) { blk.ta.value = html; fire(blk.ta); }
+    };
+
+    let b1 = null, b2 = null;
+    docs.forEach(d => {
+      findBlocks(d).forEach(b => {
+        const t = b.titleRaw.toLowerCase();
+        if (/osobn/.test(t)) b1 = b;
+        if (/p[oô]vod/.test(t)) b2 = b;
+      });
+    });
+
+    if (b1) set(b1, personality);
+    if (b2) set(b2, history);
+
+    log(`✅ Image+text: ${(b1 ? 'Osobnosť' : '—')}/${(b2 ? 'Pôvod' : '—')}`);
+  };
+
+  /* ---------- Accordion (limpa + preenche 5) ---------- */
+  const accClear = async () => {
+    let api = 0, fb = 0;
+    accEditors().forEach(ta => {
+      try {
+        const ed = findCKEByTextarea(ta);
+        if (ed?.setData) {
+          ed.setData('');
+          api++;
+        } else {
+          ta.value = '';
+          ta.setAttribute('data-editor-value-is-changed', 'true');
+          fire(ta);
+          const ediv = ta.closest('.field--type-text-long')?.querySelector('.ck-editor__editable');
+          if (ediv) ediv.innerHTML = '';
+          fb++;
+        }
+      } catch (e) {}
+    });
+    await delay(150);
+    return { api, fb, tot: accEditors().length };
+  };
+
+  const accSetOne = (ta, html) => {
+    const ed = findCKEByTextarea(ta);
+    if (ed?.setData) {
+      ed.setData(html);
+    } else {
+      const ediv = ta.closest('.field--type-text-long')?.querySelector('.ck-editor__editable');
+      if (ediv) ediv.innerHTML = html;
+      ta.value = html;
+      ta.setAttribute('data-editor-value-is-changed', 'true');
+    }
+    fire(ta);
+  };
+
+  const fillAccordion = async (items) => {
+    const info = await accClear();
+    log(`↻ Accordion limpo: via API ${info.api} | fallback ${info.fb} | total ${info.tot}`);
+
+    const tas = accEditors();
+
+    const toHtmlAcc = (s) => {
+      s = (s || '').trim();
+      if (!s) s = '[delete block]';
+      const parts = s.split(/\n{2,}/).map(x => x.trim()).filter(Boolean);
+      return (parts.length ? parts : [''])
+        .map(p => '<p>' + enc(p).replace(/\n/g, '<br>') + '</p>').join('');
+    };
+
+    const n = Math.min(items.length, tas.length);
+    for (let i = 0; i < n; i++) {
+      accSetOne(tas[i], toHtmlAcc(items[i]));
+      await delay(40);
+    }
+    log('✅ Accordion preenchido');
+  };
+
+  /* ---------- Quick Links ---------- */
+  const fillQuickLinks = (raw) => {
+    raw = norm(raw);
+    const lines = raw.split('\n').map(x => x.trim()).filter(Boolean);
+
+    const w = (select('[id$="subform-field-c-quicklinks-links-wrapper"]')?.closest('[id^="edit-field-components-"][id$="-subform"]')) || document;
+    const t = w.querySelector('textarea[data-drupal-selector*="field-c-quicklinks-title"]') ||
+              w.querySelector('input[data-drupal-selector*="field-c-quicklinks-title"]');
+
+    const rows = selectAll('#field-c-quicklinks-links-values tbody tr', w)
+      .map(tr => ({
+        t: tr.querySelector('input[name$="[title]"]'),
+        u: tr.querySelector('input[name$="[uri]"]')
+      }))
+      .filter(o => o.t && o.u);
+
+    if (t) { t.value = ''; fire(t); }
+    rows.forEach(o => {
+      o.t.value = ''; o.u.value = '';
+      fire(o.t); fire(o.u);
+    });
+
+    if (!lines.length) {
+      log('✅ Quick Links limpos (sem conteúdo)');
+      return;
+    }
+
+    const title = lines.shift();
+    if (t) { t.value = title || ''; fire(t); }
+
+    let k = 0;
+    lines.forEach((ln, i) => {
+      if (i >= rows.length) return;
+      const m = ln.match(/^([^:]+):\s*(.+)$/);
+      if (!m) return;
+      rows[i].t.value = m[1].trim();
+      rows[i].u.value = m[2].trim();
+      fire(rows[i].t); fire(rows[i].u);
+      k++;
+    });
+    log(`✅ Quick Links: título + ${k} link(s)`);
+  };
+
+  /* ---------- Meta (URL + Title + Description) ---------- */
+  const fillMeta = (alias, mtitle, mdesc) => {
+    const elUrl = select('[data-drupal-selector="edit-path-0-alias"]') ||
+                  select('#edit-path-0-alias') ||
+                  select('input[name="path[0][alias]"]');
+
+    const elTitle = select('[data-drupal-selector="edit-field-meta-tags-0-basic-title"]') ||
+                    select('#edit-field-meta-tags-0-basic-title') ||
+                    select('input[name="field_meta_tags[0][basic][title]"]');
+
+    const elOgTitle = select('[data-drupal-selector="edit-field-meta-tags-0-open-graph-og-title"]') ||
+                      select('#edit-field-meta-tags-0-open-graph-og-title') ||
+                      select('input[name="field_meta_tags[0][open_graph][og_title]"]');
+
+    const elDesc = select('[data-drupal-selector="edit-field-meta-tags-0-basic-description"]') ||
+                   select('#edit-field-meta-tags-0-basic-description') ||
+                   select('textarea[name="field_meta_tags[0][basic][description]"]');
+
+    const elOgDesc = select('[data-drupal-selector="edit-field-meta-tags-0-open-graph-og-description"]') ||
+                     select('#edit-field-meta-tags-0-open-graph-og-description') ||
+                     select('textarea[name="field_meta_tags[0][open_graph][og_description]"]');
+
+    if (alias && !/^\/|^https?:/i.test(alias)) alias = '/' + alias;
+
+    [
+      [elUrl, alias],
+      [elTitle, mtitle],
+      [elOgTitle, mtitle],
+      [elDesc, mdesc],
+      [elOgDesc, mdesc]
+    ].forEach(([el, v]) => {
+      if (el) { el.value = v || ''; fire(el); }
+    });
+
+    log('✅ Meta (URL / titles / descriptions)');
+  };
+
+  /* ---------- Glue: parse + run ---------- */
+  const COLS = [
+    'SK Breed',
+    'SK DESCRIPTON',
+    'SK CHARAKTERISTIC',
+    'Machine name',
+    'SK HEALTH',
+    'SK PERSONALITY',
+    'SK HISTORY',
+    'Cvičenie',
+    'Ideálny majiteľ',
+    'Výživa',
+    'Starostlivosť o srsť',
+    'Vhodnosť pre rodinný život',
+    'SK QUICK LINKS',
+    'SK URL',
+    'SK META TITLE',
+    'SK META DESCRIPTION'
+  ];
+
+  const preview = (arr) => {
+    const kv = COLS.map((k, i) => `• ${k}: ${ (arr[i] || '').slice(0,120).replace(/\n/g, ' ⏎ ') }`);
+    UI.out.textContent = 'Pré-visualização (truncada):\n' + kv.join('\n');
+  };
+
+  UI.btnParse.onclick = () => {
+    const arr = parseTSV(UI.ta.value || '');
+    preview(arr);
+  };
+
+  UI.btnRun.onclick = async () => {
+    UI.out.textContent = '';
+    const row = parseTSV(UI.ta.value || '');
+    if (row.filter(x => x !== '').length === 0) {
+      log('Cole a linha TSV.');
+      return;
+    }
+    preview(row);
+
+    /* 1) Abrir accords e ESPERAR */
+    await openAccordionsAndWait();
+
+    /* 2) Preencher demais campos */
+    const [
+      breed, desc, carac, machine, health,
+      personality, history,
+      acc1, acc2, acc3, acc4, acc5,
+      quicklinks, url, mtitle, mdesc
+    ] = row;
+
+    try { fillTitleDescMachine(breed, desc, machine); }
+    catch (e) { log('⚠️ H1/Description/Machine: ' + e.message); }
+
+    try { markCaracteristicas(carac); }
+    catch (e) { log('⚠️ Características: ' + e.message); }
+
+    try { fillHealth(health); }
+    catch (e) { log('⚠️ Health warning: ' + e.message); }
+
+    try { fillImageText(personality, history); }
+    catch (e) { log('⚠️ Image+text: ' + e.message); }
+
+    /* 3) Só agora: ACCORDION (limpar + preencher) */
+    try { await fillAccordion([acc1, acc2, acc3, acc4, acc5]); }
+    catch (e) { log('⚠️ Accordion: ' + e.message); }
+
+    try { fillQuickLinks(quicklinks); }
+    catch (e) { log('⚠️ Quick Links: ' + e.message); }
+
+    try { fillMeta(url, mtitle, mdesc); }
+    catch (e) { log('⚠️ Meta: ' + e.message); }
+
+    log('🎉 Concluído. Verifique os campos antes de salvar.');
+  };
+
+  const sel = window.getSelection && window.getSelection().toString();
+  if (sel && /\t/.test(sel)) UI.ta.value = sel;
+})();
