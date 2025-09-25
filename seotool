@@ -1,0 +1,274 @@
+(() => {
+  // ---------- Utils ----------
+  const $ = (s, c=document) => c.querySelector(s);
+  const norm = s => (s||'').toString().trim();
+
+  // Tentar vários seletores até achar 1 elemento
+  function pickEl(selectors) {
+    for (const sel of selectors) {
+      const el = $(sel);
+      if (el) return el;
+    }
+    return null;
+  }
+
+  // DEFAULT_MAPPING agora é um objeto de arrays (prioridade da esquerda p/ direita)
+  const DEFAULT_MAPPING = {
+    h1: [
+      '#edit-title-0-value',                           // Purina NPPE
+      '[data-drupal-selector="edit-title-0-value"]'    // estável
+    ],
+    title: [
+      '#edit-field-ln-n-meta-tags-0-basic-title',      // Purina NPPE
+      '[data-drupal-selector="edit-metatags-basic-title"]' // FamilyNes CL
+    ],
+    desc: [
+      '#edit-field-ln-n-meta-tags-0-basic-description',     // Purina NPPE
+      '[data-drupal-selector="edit-metatags-basic-description"]' // FamilyNes CL
+    ],
+    ogtitle: [
+      '#edit-field-ln-n-meta-tags-0-open-graph-og-title',        // Purina NPPE
+      '[data-drupal-selector="edit-metatags-open-graph-og-title"]' // FamilyNes CL
+    ],
+    ogdesc: [
+      '#edit-field-ln-n-meta-tags-0-open-graph-og-description',      // Purina NPPE
+      '[data-drupal-selector="edit-metatags-open-graph-og-description"]' // FamilyNes CL
+    ],
+    url: [
+      '[data-drupal-selector="edit-path-0-alias"]',
+      '#edit-path-0-alias'
+    ]
+  };
+
+  // ---------- UI ----------
+  const ov = document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center';
+  const bx = document.createElement('div');
+  bx.style.cssText='background:#111;color:#eee;width:min(1000px,96vw);max-height:92vh;overflow:auto;border-radius:14px;box-shadow:0 12px 36px rgba(0,0,0,.4);padding:16px;font:13px/1.45 system-ui,Segoe UI,Roboto,Arial';
+  bx.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+      <b style="font-size:15px">Factory Filler — TSV + Campos Soltos (v3)</b>
+      <button id="ff-close" style="padding:6px 10px;border:1px solid #444;border-radius:8px;background:#222;color:#eee">Fechar</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div>
+        <div style="opacity:.85;margin-bottom:6px"><b>1) Linha TSV (Excel)</b> — cabeçalho opcional (H1, Title, Desc, URL)</div>
+        <textarea id="ff-tsv" placeholder="Cole aqui a LINHA TSV (1 ou 2 linhas: cabeçalho + valores)" style="width:100%;height:120px;background:#181818;color:#ddd;border:1px solid #333;border-radius:10px;padding:10px"></textarea>
+        <div style="margin-top:6px;opacity:.7">Se colar só 1 linha, a ordem assumida é: H1, Title, Desc, URL.</div>
+      </div>
+
+      <div>
+        <div style="opacity:.85;margin-bottom:6px"><b>2) Campos Soltos (opcionais)</b> — sobrescrevem o TSV</div>
+        <div style="display:grid;grid-template-columns:1fr;gap:8px">
+          <label>H1
+            <input id="ff-h1" type="text" placeholder="Ex.: Headline da página" style="width:100%;background:#181818;color:#ddd;border:1px solid #333;border-radius:8px;padding:8px;margin-top:4px">
+          </label>
+          <label>Meta Title
+            <input id="ff-title" type="text" placeholder="Ex.: Meta title" style="width:100%;background:#181818;color:#ddd;border:1px solid #333;border-radius:8px;padding:8px;margin-top:4px">
+          </label>
+          <label>Meta Description
+            <textarea id="ff-desc" placeholder="Ex.: Meta description" style="width:100%;height:66px;background:#181818;color:#ddd;border:1px solid #333;border-radius:8px;padding:8px;margin-top:4px"></textarea>
+          </label>
+          <label>URL / Alias
+            <input id="ff-url" type="text" placeholder="/meu-alias" style="width:100%;background:#181818;color:#ddd;border:1px solid #333;border-radius:8px;padding:8px;margin-top:4px">
+          </label>
+
+          <div style="display:flex;gap:16px;align-items:center;margin-top:6px">
+            <label style="display:flex;gap:6px;align-items:center;">
+              <input id="ff-sync-og-title" type="checkbox"> <span>OG Title = Meta Title</span>
+            </label>
+            <label style="display:flex;gap:6px;align-items:center;">
+              <input id="ff-sync-og-desc" type="checkbox"> <span>OG Description = Meta Description</span>
+            </label>
+          </div>
+
+          <label>OG Title
+            <input id="ff-ogtitle" type="text" placeholder="(ou herdado do Meta Title)" style="width:100%;background:#181818;color:#bbb;border:1px solid #333;border-radius:8px;padding:8px;margin-top:4px">
+          </label>
+          <label>OG Description
+            <textarea id="ff-ogdesc" placeholder="(ou herdado do Meta Description)" style="width:100%;height:66px;background:#181818;color:#bbb;border:1px solid #333;border-radius:8px;padding:8px;margin-top:4px"></textarea>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <details style="margin-top:10px">
+      <summary style="cursor:pointer;opacity:.9"><b>Opcional: Mapping JSON</b> (sobrescreve/expande seletores)</summary>
+      <textarea id="ff-json" placeholder='Cole o JSON exportado (com "items": [...])' style="width:100%;height:120px;background:#181818;color:#ddd;border:1px solid #333;border-radius:10px;padding:10px;margin-top:8px"></textarea>
+      <div style="margin-top:6px;opacity:.7">Se vazio, uso os mapeamentos padrão (Purina + FamilyNes).</div>
+    </details>
+
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button id="ff-run"  style="padding:10px 14px;border:1px solid #444;border-radius:10px;background:#2a7;color:#111;font-weight:600">Preencher</button>
+      <button id="ff-dry"  style="padding:10px 14px;border:1px solid #444;border-radius:10px;background:#555;color:#eee;">Só simular</button>
+      <button id="ff-clear"style="padding:10px 14px;border:1px solid #444;border-radius:10px;background:#222;color:#eee;">Limpar campos mapeados</button>
+      <div style="opacity:.6;align-self:center">• Tenta vários seletores por campo (fallbacks).</div>
+    </div>
+
+    <pre id="ff-out" style="margin-top:12px;background:#0d0d0d;border:1px solid #222;border-radius:10px;padding:10px;white-space:pre-wrap"></pre>
+  `;
+  ov.appendChild(bx);
+  document.body.appendChild(ov);
+  $('#ff-close').onclick = () => ov.remove();
+
+  // ---------- Parsing ----------
+  function parseTSV(text){
+    const lines = norm(text).split(/\r?\n/).filter(Boolean);
+    if (!lines.length) return {};
+    let headers=[], values=[];
+    if (lines.length===1){ values = lines[0].split('\t'); headers=['H1','Title','Desc','URL']; }
+    else { headers = lines[0].split('\t'); values = lines[1].split('\t'); }
+    const raw={}; headers.forEach((h,i)=>raw[h.trim()] = (values[i]||'').trim());
+    const out={};
+    for (const [k,v] of Object.entries(raw)) {
+      const kk = k.toLowerCase();
+      if (/(^|\s)h1($|\s)/.test(kk)) out.h1=v;
+      else if (kk.includes('meta title') || kk==='title') out.title=v;
+      else if (kk.includes('meta description') || kk==='desc' || kk==='description') out.desc=v;
+      else if (kk==='url' || kk==='alias' || kk==='path' || kk==='slug') out.url=v;
+      else if (kk.includes('og') && kk.includes('title')) out.ogtitle=v;
+      else if (kk.includes('og') && (kk.includes('desc')||kk.includes('description'))) out.ogdesc=v;
+    }
+    return out;
+  }
+
+  function getManualValues(){
+    return {
+      h1: norm($('#ff-h1').value),
+      title: norm($('#ff-title').value),
+      desc: norm($('#ff-desc').value),
+      url: norm($('#ff-url').value),
+      ogtitle: norm($('#ff-ogtitle').value),
+      ogdesc: norm($('#ff-ogdesc').value)
+    };
+  }
+
+  // Merge (manual sobrescreve TSV) + herança OG
+  function mergePayload(tsvObj, manualObj, syncOgT, syncOgD){
+    const p = {...tsvObj};
+    for (const k of ['h1','title','desc','url','ogtitle','ogdesc']) {
+      if (manualObj[k]) p[k]=manualObj[k];
+    }
+    if (syncOgT) p.ogtitle = p.title || '';
+    if (syncOgD) p.ogdesc  = p.desc  || '';
+    return p;
+  }
+
+  // Constrói/expande mapping a partir de JSON colado (acrescenta aos defaults)
+  function buildSelectorPoolFromJSON(jsonText){
+    const pool = JSON.parse(JSON.stringify(DEFAULT_MAPPING)); // deep copy
+    if (!jsonText || !jsonText.trim()) return pool;
+    try{
+      const data = JSON.parse(jsonText);
+      const items = Array.isArray(data.items) ? data.items : [];
+      const push = (key, sel) => { if (sel && !pool[key].includes(sel)) pool[key].push(sel); };
+      for (const it of items){
+        const label = (it.field?.label||'').toLowerCase();
+        const note  = (it.note||'').toLowerCase();
+        const sel = it.field?.cssSelector || (it.field?.id ? '#'+it.field.id : null);
+        if (!sel) continue;
+        if (note.includes('recebe o h1') || ['titulo','título','title'].includes(label)) push('h1', sel);
+        if (note.includes('meta title') || label==='page title') push('title', sel);
+        if (note.includes('meta description') || label==='description') push('desc', sel);
+        if (note.includes('og title')) push('ogtitle', sel);
+        if (note.includes('og description')) push('ogdesc', sel);
+        if (label.includes('alias') || note.includes('alias') || note.includes('url')) push('url', sel);
+      }
+    }catch{}
+    return pool;
+  }
+
+  function setValue(el, val){
+    if (!el) return false;
+    const tag = el.tagName.toLowerCase();
+    el.focus();
+    if (tag==='input' || tag==='textarea' || tag==='select'){
+      el.value = val;
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true}));
+      return true;
+    }
+    return false;
+  }
+
+  function clearValue(el){ return setValue(el,''); }
+
+  function fillFields(payload, selectorPool, {dryRun=false, doClear=false}={}){
+    const report = { filled:[], skipped:[], missing:[], unmapped:[] };
+    const keys = ['h1','title','desc','ogtitle','ogdesc','url'];
+    for (const key of keys){
+      const sels = selectorPool[key] || [];
+      const el = pickEl(sels);
+      const hasVal = Object.prototype.hasOwnProperty.call(payload,key) && payload[key]!=='' && payload[key]!=null;
+
+      if (!el) {
+        if (hasVal) report.missing.push({key, selector: (sels[0]||'(nenhum)')});
+        continue;
+      }
+      if (doClear && !hasVal) {
+        if (!dryRun) clearValue(el);
+        report.filled.push({key, selector: '#'+(el.id||el.name||el.getAttribute('data-drupal-selector')||sels[0]), value:''});
+        continue;
+      }
+      if (hasVal) {
+        if (!dryRun) setValue(el, payload[key]);
+        report.filled.push({key, selector: '#'+(el.id||el.name||el.getAttribute('data-drupal-selector')||sels[0]), value:payload[key]});
+      } else {
+        report.skipped.push({key, selector: '#'+(el.id||el.name||el.getAttribute('data-drupal-selector')||sels[0])});
+      }
+    }
+    return report;
+  }
+
+  function fmtReport(rep){
+    const lines=[];
+    if (rep.filled.length){ lines.push('✅ Preenchidos:'); rep.filled.forEach(x=>lines.push(`  • ${x.key} → ${x.selector}\n    ↳ ${x.value}`)); }
+    if (rep.skipped.length){ lines.push('\n⏭️ Ignorados (sem valor):'); rep.skipped.forEach(x=>lines.push(`  • ${x.key} → ${x.selector}`)); }
+    if (rep.unmapped?.length){ lines.push('\n❓ Sem mapeamento:'); rep.unmapped.forEach(x=>lines.push(`  • ${x.key} ↳ ${x.value}`)); }
+    if (rep.missing.length){ lines.push('\n⚠️ Campo não encontrado (nenhum seletor válido no DOM):'); rep.missing.forEach(x=>lines.push(`  • ${x.key} (ex.: ${x.selector})`)); }
+    return lines.join('\n');
+  }
+
+  // ---------- Sync OG ↔ Meta (UI) ----------
+  const titleEl = $('#ff-title');
+  const descEl  = $('#ff-desc');
+  const ogtEl   = $('#ff-ogtitle');
+  const ogdEl   = $('#ff-ogdesc');
+  const cSyncT  = $('#ff-sync-og-title');
+  const cSyncD  = $('#ff-sync-og-desc');
+
+  function syncOGTitle(){ if (cSyncT.checked){ ogtEl.value = titleEl.value; ogtEl.disabled = true; ogtEl.style.opacity=.6; } else { ogtEl.disabled=false; ogtEl.style.opacity=1; } }
+  function syncOGDesc(){ if (cSyncD.checked){ ogdEl.value = descEl.value; ogdEl.disabled = true; ogdEl.style.opacity=.6; } else { ogdEl.disabled=false; ogdEl.style.opacity=1; } }
+  cSyncT.addEventListener('change', syncOGTitle);
+  cSyncD.addEventListener('change', syncOGDesc);
+  titleEl.addEventListener('input', syncOGTitle);
+  descEl.addEventListener('input', syncOGDesc);
+  syncOGTitle(); syncOGDesc();
+
+  // ---------- Actions ----------
+  const outEl = $('#ff-out');
+  function getPayloadAndMap(){
+    const tsv = parseTSV($('#ff-tsv').value);
+    const manual = getManualValues();
+    const data = mergePayload(tsv, manual, $('#ff-sync-og-title').checked, $('#ff-sync-og-desc').checked);
+    const pool = buildSelectorPoolFromJSON($('#ff-json').value);
+    return { data, pool };
+  }
+
+  $('#ff-run').onclick = () => {
+    const {data, pool} = getPayloadAndMap();
+    const rep = fillFields(data, pool, {dryRun:false, doClear:false});
+    outEl.textContent = fmtReport(rep);
+  };
+  $('#ff-dry').onclick = () => {
+    const {data, pool} = getPayloadAndMap();
+    const rep = fillFields(data, pool, {dryRun:true, doClear:false});
+    outEl.textContent = '[Simulação]\n' + fmtReport(rep);
+  };
+  $('#ff-clear').onclick = () => {
+    const {pool} = getPayloadAndMap();
+    const rep = fillFields({}, pool, {dryRun:false, doClear:true});
+    outEl.textContent = '[Limpeza]\n' + fmtReport(rep);
+  };
+})();
