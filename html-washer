@@ -3,25 +3,50 @@
     const wrap = document.createElement('div');
     wrap.innerHTML = html;
 
+    // ===== Snapshot dos href originais (atributo cru, não resolvido) =====
+    const linkHrefs = new WeakMap();
+    wrap.querySelectorAll('a').forEach(a => {
+      const raw = a.getAttribute('href'); // mantém exatamente o que veio
+      if (raw != null) linkHrefs.set(a, raw);
+    });
+
     // 1) UL: remove inline style
     wrap.querySelectorAll('ul[style]').forEach(u => u.removeAttribute('style'));
-    // 2) CK bogus spans de listas
+
+    // 2) CK bogus spans de listas (preserva conteúdo)
     wrap.querySelectorAll('span.ck-list-bogus-paragraph').forEach(s => {
       const p = s.parentNode;
       while (s.firstChild) p.insertBefore(s.firstChild, s);
       s.remove();
     });
+
     // 3) Remover <span> mantendo conteúdo
+    //    (Se preferir apenas tirar o style de spans, comente este bloco e use o 3b)
     wrap.querySelectorAll('span').forEach(s => {
       const p = s.parentNode;
       while (s.firstChild) p.insertBefore(s.firstChild, s);
       s.remove();
     });
-    // 4) Remover atributos residuais ruidosos
+
+    // 3b) --- alternativa: somente remover style/atributos de <span>, sem deletar a tag ---
+    // wrap.querySelectorAll('span').forEach(s => {
+    //   s.removeAttribute('style');
+    //   s.removeAttribute('lang');
+    //   s.removeAttribute('dir');
+    // });
+
+    // 4) Remover atributos residuais ruidosos em todos os elementos
     wrap.querySelectorAll('*').forEach(el => {
       el.removeAttribute('style');
       el.removeAttribute('lang');
       el.removeAttribute('dir');
+    });
+
+    // ===== Restaurar fielmente os href dos links (evita virar "/../../") =====
+    wrap.querySelectorAll('a').forEach(a => {
+      if (linkHrefs.has(a)) {
+        a.setAttribute('href', linkHrefs.get(a));
+      }
     });
 
     let out = wrap.innerHTML;
@@ -33,21 +58,18 @@
     out = out.replace(/&nbsp;/g, ' ');
 
     // ====== Espaçamento apenas para tags inline ======
-    // conj. de tags inline que vamos tratar
     const inline = '(a|strong|em|b|i|u|sup|sub|code|span)';
 
-    // (A) Remover espaço indevido logo após apóstrofo francês antes de tag inline: l’ <strong> → l’<strong>
+    // (A) l’ <strong> → l’<strong>
     out = out.replace(new RegExp("([’'])\\s+<" + inline + "\\b", "gi"), "$1<$2");
 
-    // (B) Adicionar espaço antes de tag inline se vier colada a letra/número: ...chiots<a> → ...chiots <a>
+    // (B) ...chiots<a> → ...chiots <a>
     out = out.replace(new RegExp("([A-Za-zÀ-ÖØ-öø-ÿ0-9])<" + inline + "\\b", "g"), "$1 <$2");
 
-    // (C) Adicionar espaço depois de fechar tag inline se vier colada a letra/número: </a>sensibles → </a> sensibles
+    // (C) </a>sensibles → </a> sensibles
     out = out.replace(new RegExp("</" + inline + ">(?=[A-Za-zÀ-ÖØ-öø-ÿ0-9])", "g"), "</$1> ");
 
-    // (D) Evitar espaço antes de pontuação comum quando bold/link termina antes dela (opcional, suave)
-    // </strong> :  → </strong> :  (NBSP fina francesa seria o ideal; aqui só evita inserir espaço a mais)
-    // Se quiser a NBSP fina, troque por '\u00A0'
+    // (D) Espaço fino antes de pontuação após tag inline
     out = out.replace(/<\/(strong|em|b|i|u)>\s+([:;!?])/g, "</$1>\u00A0$2");
 
     return out.trim();
