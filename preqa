@@ -1,0 +1,486 @@
+javascript:(() => {
+  /* === Paste Spec vs Page – v5.6 (accordion-safe, chunking, smart scope fallback) === */
+  const $$ = (s, c=document) => c.querySelectorAll(s);
+  const $  = (s, c=document) => c.querySelector(s);
+  const K  = s => (s || "").toString().normalize("NFKC").replace(/\u00A0/g, " ").trim();
+  const N  = s => K(s).replace(/\s+/g, " ").trim();
+  const D  = s => N(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const TOK = s => Array.from(D(s).matchAll(/[\p{L}\p{N}]{2,}/gu)).map(m => m[0]);
+  const U   = a => Array.from(new Set(a));
+  const COL   = s => s === "PRESENT" ? "#2f9e5b" : s === "SIMILAR" ? "#f1a02a" : s === "PARTIAL" ? "#e59f49" : "#ff6b6b";
+  const CLASS = p => p >= 0.85 ? "PRESENT" : p >= 0.70 ? "SIMILAR" : p >= 0.45 ? "PARTIAL" : "MISSING";
+  const STOP  = ["skip to main", "previous next", "newsletter", "cookies", "gdpr", "breadcrumb"];
+  const xml   = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const missTerms = (exp, found) => {
+    const a = TOK(exp), b = TOK(found);
+    return U(a.filter(w => !b.includes(w))).slice(0, 12).join(", ");
+  };
+
+  // --- chunk large paragraphs into overlapping windows ---
+  function chunkText(t, size = 320, step = 160) {
+    const s = (t || "").trim();
+    if (!s) return [];
+    if (s.length <= size) return [s];
+    const out = [];
+    for (let i = 0; i < s.length; i += step) {
+      out.push(s.slice(i, i + size));
+      if (i + size >= s.length) break;
+    }
+    return out;
+  }
+
+  function rmJunk(root) {
+    const c = root.cloneNode(true);
+
+    // Remove noise, BUT keep buttons (unwrap them for accordion headings)
+    c.querySelectorAll(
+      "nav,header,footer,aside,script,style,noscript,svg,form,[role='navigation'],[aria-label*='breadcrumb' i],[class*='breadcrumb' i],[class*='cookie' i],[id*='cookie' i],[class*='nav' i],[class*='menu' i],[class*='search' i],.newsletter,.subscribe,.modal"
+    ).forEach(e => e.remove());
+
+    // Unwrap <button> to <span> keeping text
+    c.querySelectorAll("button").forEach(btn => {
+      const span = document.createElement("span");
+      span.textContent = (btn.innerText || btn.textContent || "").trim();
+      span.setAttribute("data-unwrapped-button", "1");
+      btn.replaceWith(span);
+    });
+
+    // Remove only obviously-noisy anchors
+    c.querySelectorAll("a").forEach(a => {
+      const t = D(a.innerText || a.textContent || "");
+      const bad = t.length < 3 || STOP.some(p => t.includes(p));
+      if (bad) a.remove();
+    });
+    return c;
+  }
+
+  const getMain = () => rmJunk(document.querySelector("main,article,[role='main'],.main,.content,#content") || document.body);
+  const splitSentences = t => N(t).split(/(?<=[\.\!\?])\s+(?=[A-ZÀ-Ÿ])/).map(N).filter(s => TOK(s).length >= 4 || s.length > 30);
+
+  /* TF-IDF */
+  function tfidfBest(needle, candidates) {
+    const docs = [needle, ...candidates];
+    const toks = docs.map(TOK);
+    const df = new Map();
+    toks.forEach((ts, i) => { U(ts).forEach(w => df.set(w, (df.get(w) || 0) + (i === 0 ? 0 : 1))); });
+    const Ndocs = candidates.length;
+    const idf = w => Math.log((Ndocs + 1) / ((df.get(w) || 0) + 1)) + 1;
+    const vec = ts => {
+      const tf = new Map();
+      ts.forEach(w => tf.set(w, (tf.get(w) || 0) + 1));
+      const v = new Map();
+      tf.forEach((n, w) => v.set(w, n * idf(w)));
+      return v;
+    };
+    const vq = vec(toks[0]);
+    let best = 0, bestTxt = "";
+    for (let i = 0; i < candidates.length; i++) {
+      const vd = vec(toks[i + 1]);
+      let dot = 0, na = 0, nb = 0;
+      vq.forEach((wv, w) => { na += wv * wv; if (vd.has(w)) dot += wv * (vd.get(w) || 0); });
+      vd.forEach(wv => { nb += wv * wv; });
+      const sim = (!na || !nb) ? 0 : dot / (Math.sqrt(na) * Math.sqrt(nb));
+      if (sim > best) { best = sim; bestTxt = candidates[i]; }
+    }
+    return { best, found: bestTxt };
+  }
+
+  /* negation + overlap + containment boost */
+  const hasNeg  = s => /\b(n['’]e?s?t|pas|non)\b/i.test(D(s));
+  const hasHypo = s => /hypoallerg[eé]nique/i.test(s);
+  function overlap(exp, found) {
+    const a = U(TOK(exp)), b = U(TOK(found));
+    if (!a.length || !b.length) return 0;
+    const inter = a.filter(w => b.includes(w)).length;
+    return inter / Math.max(1, a.length);
+  }
+  const STOPW = new Set(["de","du","la","le","les","des","un","une","et","en","au","aux","d","l","que","qui","ce","cette","lequel"]);
+  function containment(exp, found) {
+    const a = U(TOK(exp).filter(w => !STOPW.has(w))), b = new Set(TOK(found));
+    if (!a.length) return 0;
+    const inter = a.filter(w => b.has(w)).length;
+    return inter / a.length;
+  }
+  function adjust(exp, found, sim) {
+    if (!found) return 0;
+    if (hasNeg(exp) && (!hasNeg(found) || (hasHypo(exp) && !hasHypo(found)))) sim = Math.min(sim, 0.30);
+    const lenTok = TOK(exp).length;
+    let min = lenTok < 8 ? 0.50 : 0.35;
+    if (lenTok >= 40) min = 0.25; // relaxed for long texts
+    if (overlap(exp, found) < min) sim = Math.min(sim, 0.34);
+    const cont = containment(exp, found);
+    if (cont >= 0.9) sim = Math.max(sim, 0.95);
+    return sim;
+  }
+
+  /* sections */
+  function sectionBlocks() {
+    const main = getMain();
+    const heads = [...main.querySelectorAll("h1,h2,h3,h4,h5,h6,[role='heading']")];
+    const blocks = [];
+    for (let i = 0; i < heads.length; i++) {
+      const h = heads[i];
+      let n = h.nextElementSibling;
+      const bucket = [];
+      while (n && !(/^H[1-6]$/i.test(n.tagName) || n.matches("[role='heading']"))) {
+        bucket.push(n);
+        n = n.nextElementSibling;
+      }
+      blocks.push({ head: N(h.innerText || h.textContent || ""), nodes: bucket });
+    }
+    return blocks;
+  }
+
+  // broadened patterns
+  const rePhysique = /(yeux|pelage|poils|triangul|oreilles|pattes|sous[-\s]?poil|museau|queue|taille|athl[eé]tique|long(?:ue|s)?|fin(?:e|s)?|gracieu|[ée]l[eé]gant)/i;
+  const reSante    = /(sant[eé]|tumeur|cancer|lymphome|bronchique|tousse|tousser|vomit|vomir|pica|maladie|h[eé]r[ée]ditaire)/i;
+  const reHistoire = /(histoire|origine|origines|import[ée]s|grande[-\s]?bretagne|\b18\d{2}\b|\b19\d{2}\b|siam)/i;
+  const reCouleur  = /(couleur|vari[eé]t[eé]s?|seal point|lilac point|robe|points?\b|marques?)/i;
+  const reChoisir  = /(choisir|chaton|port[ée]e|[ée]leveur|lign[ée]e|prix|budget|environnement)/i;
+
+  const secMap = [
+    { rx:/sant[eé]/i, key:"sante" },
+    { rx:/physique|caract[eè]ristiques? physiques?/i, key:"physique" },
+    { rx:/histoire|origines?/i, key:"histoire" },
+    { rx:/soins/i, key:"soins" },
+    { rx:/int[eé]rieur|ext[eé]rieur/i, key:"intext" },
+    { rx:/aptitude .* famille|vie de famille/i, key:"famille" },
+    { rx:/faits amusants|fun facts/i, key:"faits" },
+    { rx:/questions fr[eé]quentes|faq/i, key:"faq" },
+    { rx:/[eé]valuation .* v[eé]t[eé]rinaire|veterinaire/i, key:"vet" },
+    { rx:/alimentation|nutrition/i, key:"alimentation" },
+    { rx:/choisir un chaton|environnement|[ée]leveur|port[ée]e|lign[ée]e|prix/i, key:"choisir" }
+  ];
+
+  function pickScope(exp, blocks) {
+    const e = N(exp);
+
+    // Specific boosts FIRST (before FAQ)
+    if (/caract[eè]re du siamois/i.test(e)) {
+      const hit = blocks.find(b => /caract[eè]re|temperament|osobnost|personnalit[eé]/i.test(b.head));
+      if (hit) return { nodes: hit.nodes, key: "caractere" };
+    }
+    if (rePhysique.test(e)) {
+      const hit = blocks.find(b => /physique|caract[eè]ristiques? physiques?/i.test(b.head));
+      if (hit) return { nodes: hit.nodes, key: "physique" };
+    }
+    if (reSante.test(e)) {
+      const hit = blocks.find(b => /sant[eé]/i.test(b.head));
+      if (hit) return { nodes: hit.nodes, key: "sante" };
+    }
+    if (reHistoire.test(e)) {
+      const hit = blocks.find(b => /histoire|origines?/i.test(b.head));
+      if (hit) return { nodes: hit.nodes, key: "histoire" };
+    }
+    if (reCouleur.test(e)) {
+      const hit = blocks.find(b => /physique|caract[eè]ristiques? physiques?/i.test(b.head));
+      if (hit) return { nodes: hit.nodes, key: "physique" };
+    }
+    if (reChoisir.test(e)) {
+      const hit = blocks.find(b => /choisir|environnement/i.test(b.head));
+      if (hit) return { nodes: hit.nodes, key: "choisir" };
+    }
+    if (/(proportion .* nutriments|en mati[eè]re de nutrition|croquettes|aliments humides|nutriments)/i.test(e)) {
+      const hit = blocks.find(b => /alimentation|nutrition/i.test(b.head));
+      if (hit) return { nodes: hit.nodes, key: "alimentation" };
+    }
+    if (/(solitude|absent toute la journ[eé]e|compagnie|joueur|curieux|social)/i.test(e)) {
+      const hit = blocks.find(b => /caract[eè]re|temperament|osobnost|personnalit[eé]/i.test(b.head));
+      if (hit) return { nodes: hit.nodes, key: "caractere" };
+    }
+
+    // FAQ only after other boosts
+    if (/\?/.test(e)) {
+      const hit = blocks.find(b => /questions fr[eé]quentes|faq/i.test(b.head));
+      if (hit) return { nodes: hit.nodes, key: "faq" };
+    }
+
+    // generic map fallback
+    for (const s of secMap) {
+      if (s.rx.test(e)) {
+        const hit = blocks.find(b => s.rx.test(b.head));
+        if (hit) return { nodes: hit.nodes, key: s.key };
+      }
+    }
+    return null;
+  }
+
+  /* vet pairs (DOM + text) */
+  function extractVetPairs() {
+    const pairs = new Set();
+    const vetHead = [...document.querySelectorAll("h1,h2,h3,h4,[role='heading']")].find(h => /[eé]valuation .*v[eé]t[eé]rinaire|veterinaire/i.test(h.textContent || ""));
+    const scopeNodes = [];
+    if (vetHead) {
+      let n = vetHead.nextElementSibling;
+      while (n && !/^H[1-6]$/i.test(n.tagName) && !n.matches("[role='heading']")) {
+        scopeNodes.push(n);
+        n = n.nextElementSibling;
+      }
+    }
+    const roots = scopeNodes.length ? scopeNodes : [document.body];
+    roots.forEach(root => {
+      const items = [...root.querySelectorAll("li, p, div, span, td, th")];
+      for (let i = 0; i < items.length; i++) {
+        const t = N(items[i].innerText || items[i].textContent || "");
+        const m = t.match(/\b([0-5])\s*\/\s*5\b/);
+        if (!m) continue;
+        let label = t.replace(/\b[0-5]\s*\/\s*5\b.*$/, "").replace(/\s*[:：\-–]\s*$/, "").trim();
+        if (!label) {
+          for (let j = i - 1; j >= Math.max(0, i - 6); j--) {
+            const prev = N(items[j].innerText || items[j].textContent || "");
+            if (/[A-Za-zÀ-ÿ]/.test(prev)) {
+              label = prev.replace(/\s*[:：\-–]\s*$/, "");
+              if (TOK(label).length >= 1) break;
+            }
+          }
+        }
+        if (label) pairs.add(`${label} : ${m[1]}/5`);
+      }
+    });
+    (document.body.innerText || "").split(/\r?\n/).map(N).filter(Boolean).forEach(line => {
+      const m = line.match(/^([A-Za-zÀ-ÿ'’\-\s&]+?)\s*(?:[:：\-–]\s*)?([0-5])\s*\/\s*5\s*$/);
+      if (m) pairs.add(`${N(m[1])} : ${m[2]}/5`);
+    });
+    return [...pairs];
+  }
+
+  /* candidates */
+  function textFromNodes(nodes) {
+    const parts = [];
+    nodes.forEach(root => {
+      // LIs
+      parts.push(...[...root.querySelectorAll("li")].map(n => N(n.innerText || n.textContent || "")));
+
+      // Paragraph-like
+      [...root.querySelectorAll("p,blockquote,dd,dt,summary,details")].forEach(n => {
+        const t = N(n.innerText || n.textContent || "");
+        if (!t) return;
+        parts.push(t);                        // whole paragraph
+        parts.push(...splitSentences(t));     // sentences
+        parts.push(...chunkText(t, 320, 160));// overlapping windows
+      });
+
+      // Headings
+      parts.push(...[...root.querySelectorAll("h1,h2,h3,h4,h5,h6,[role='heading']")].map(n => N(n.innerText || n.textContent || "")));
+    });
+    return U(parts).filter(Boolean);
+  }
+
+  function bodyLines() {
+    return U(
+      (document.body.innerText || "")
+        .replace(/\r\n/g, "\n")
+        .split("\n")
+        .map(N)
+        .filter(Boolean)
+        .filter(t => t.length <= 340 && TOK(t).length >= 2)
+    );
+  }
+
+  function collectCandidates(scopeObj) {
+    if (scopeObj && scopeObj.nodes && scopeObj.nodes.length) {
+      let parts = textFromNodes(scopeObj.nodes);
+      if (scopeObj.key === "faits") {
+        parts = [...new Set([...scopeObj.nodes.flatMap(n => [...n.querySelectorAll("li")].map(x => N(x.innerText || x.textContent || "")))])].filter(Boolean);
+      }
+      if (scopeObj.key === "faq") {
+        parts = parts.filter(t => /\?$/.test(t) || t.length > 40);
+      }
+      return parts;
+    }
+    // no explicit section: take main + body + vet pairs
+    return U(textFromNodes([getMain()]).concat(bodyLines(), extractVetPairs()));
+  }
+
+  // --- NEW: try scoped, then broaden to whole page if similarity stays low
+  function matchWithFallback(exp, scopeObj, blocks) {
+    // 1) scoped
+    let cands = collectCandidates(scopeObj);
+    let r = tfidfBest(exp, cands);
+    let sim = adjust(exp, r.found, r.best);
+    if (sim >= 0.60 || !scopeObj) return { r, sim };
+
+    // 2) accordion-siblings (all blocks inside same accordion container, if any)
+    // heuristic: use all blocks' nodes since they share the same parent accordion wrapper
+    const sibCands = U([].concat(...blocks.map(b => textFromNodes(b.nodes))));
+    if (sibCands.length) {
+      const r2 = tfidfBest(exp, sibCands);
+      const sim2 = adjust(exp, r2.found, r2.best);
+      if (sim2 > sim) { r = r2; sim = sim2; }
+      if (sim >= 0.60) return { r, sim };
+    }
+
+    // 3) global
+    const globalCands = collectCandidates(null);
+    const r3 = tfidfBest(exp, globalCands);
+    const sim3 = adjust(exp, r3.found, r3.best);
+    if (sim3 > sim) { r = r3; sim = sim3; }
+
+    return { r, sim };
+  }
+
+  /* parse spec */
+  function parseSpec(raw) {
+    const txt = raw.replace(/\r\n/g, "\n");
+    const url = (txt.match(/^\s*URL:\s*(\S+)/im) || [])[1] || "";
+    function between(mark) {
+      const re = new RegExp(`^\\s*########################\\s*${mark}:\\s*\\n([\\s\\S]*?)\\n########################`,"im");
+      const m  = txt.match(re);
+      return m ? N(m[1]) : "";
+    }
+    const title = between("TITLE"), desc = between("DESCRIPTION");
+    let body = "";
+    const i = txt.search(/########################\s*DESCRIPTION:/i);
+    if (i > -1) {
+      const after = txt.slice(i);
+      body = after.replace(/########################[\s\S]*?\n########################/i, "");
+    } else body = txt;
+
+    const rawLines = body.split("\n").map(N).filter(Boolean).filter(l => !/^skip to main/i.test(l));
+    let ignoreSet = new Set();
+    let inFacts = false;
+    rawLines.forEach((l, idx) => {
+      if (/^\s*ce que vous devez savoir\s*:?\s*$/i.test(l)) inFacts = true;
+      else if (inFacts) {
+        if (/^[•\-–]/.test(l)) ignoreSet.add(idx);
+        else inFacts = false;
+      }
+    });
+
+    const lines = rawLines.map((l, idx) => ({ t:l, ignore: ignoreSet.has(idx) || /sur cette race de chien/i.test(l) }));
+    const bullets   = lines.filter(o => /^[•\-–]/.test(o.t) && !o.ignore).map(o => o.t.replace(/^[•\-–\s]+/, ""));
+    const headings  = lines.filter(o => !/^[•\-–]/.test(o.t) && !o.ignore && /^[A-ZÀ-Ÿ0-9].{0,120}$/.test(o.t) && !/[:.!?]$/.test(o.t) && TOK(o.t).length >= 2).map(o => o.t);
+    const paras     = lines.filter(o => !o.ignore && !bullets.includes(o.t) && !headings.includes(o.t) && (TOK(o.t).length >= 4 || o.t.length > 30)).map(o => o.t);
+
+    return { url, title, desc, expected: U([].concat(bullets, headings, paras)) };
+  }
+
+  /* UI */
+  function showUI(rows, metaRows) {
+    const ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding:24px";
+    const bx = document.createElement("div");
+    bx.style.cssText = "background:#101114;color:#e6e6e6;width:min(1100px,96vw);max-height:90vh;overflow:auto;border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.5);font:13px/1.5 system-ui,Segoe UI,Roboto,Arial";
+    bx.innerHTML = '<div style="position:sticky;top:0;background:#101114;padding:14px 16px;border-bottom:1px solid #26272b;display:flex;gap:8px;align-items:center;justify-content:space-between"><b>Paste Spec – Page QA</b><div style="display:flex;gap:8px;align-items:center"><span id="sum" style="opacity:.8"></span><button id="fail" style="padding:6px 10px;border:1px solid #3a3b40;border-radius:8px;background:#18191d;color:#e6e6e6;cursor:pointer">Show failures</button><button id="cp" style="padding:6px 10px;border:1px solid #2b864d;border-radius:8px;background:#2f9e5b;color:#fff;cursor:pointer;font-weight:600">Copy</button><button id="x" style="padding:6px 10px;border:1px solid #3a3b40;border-radius:8px;background:#18191d;color:#e6e6e6;cursor:pointer">Close</button></div></div>';
+    const ct = document.createElement("div");
+    ct.style.cssText = "padding:14px 16px;";
+    const block = (title, c) => {
+      const w = document.createElement("div");
+      w.style.cssText = "padding:10px 0;border-bottom:1px dashed #2a2b31";
+      w.innerHTML = `<div style="display:flex;gap:10px;align-items:center"><span style="min-width:96px;display:inline-block;font-weight:800;color:${COL(c.status)}">${c.status}</span><span style="opacity:.75">${Math.round(c.sim * 100)}%</span><span style="margin-left:10px">${title}</span></div>${c.match ? `<div style="opacity:.9;margin:6px 0 0 106px;white-space:pre-wrap;border-left:3px solid ${COL(c.status)};padding-left:8px">${xml(c.match.slice(0, 700))}${c.match.length > 700 ? "…" : ""}</div>` : ""}${c.miss ? `<div style="opacity:.8;margin:6px 0 0 106px;white-space:pre-wrap"><b>Missing terms:</b> ${xml(c.miss)}</div>` : ""}`;
+      w.dataset.status = c.status;
+      return w;
+    };
+    const metaWrap = document.createElement("div");
+    metaWrap.style.cssText = "margin-bottom:8px";
+    metaRows.forEach(m => metaWrap.appendChild(block(m.label, m)));
+    ct.appendChild(metaWrap);
+    const rowsWrap = document.createElement("div");
+    rows.forEach(r => rowsWrap.appendChild(block(r.label, r)));
+    ct.appendChild(rowsWrap);
+    bx.appendChild(ct);
+    const ov2 = document.createElement("div");
+    ov2.appendChild(bx);
+    document.body.appendChild(ov);
+    ov.appendChild(bx);
+    const count = k => rows.filter(r => r.status === k).length;
+    $("#sum", bx).textContent = `Present ${count("PRESENT")} · Similar ${count("SIMILAR")} · Partial ${count("PARTIAL")} · Missing ${count("MISSING")} · Total ${rows.length}`;
+    $("#x", bx).onclick = () => ov.remove();
+    $("#cp", bx).onclick = () => {
+      const toTxt = r => `${r.status}\t${Math.round(r.sim * 100)}%\t${r.label}\t${r.match ? r.match.replace(/\s+/g, " ").slice(0, 300) : ""}${r.miss ? `\tMissing: ${r.miss}` : ""}`;
+      const out = `Meta checks:\n${metaRows.map(toTxt).join("\n")}\n\nLines:\n${rows.map(toTxt).join("\n")}`;
+      navigator.clipboard.writeText(out).catch(() => {});
+    };
+    $("#fail", bx).onclick = () => {
+      const only = $("#fail", bx).dataset.only === "1";
+      $("#fail", bx).dataset.only = only ? "0" : "1";
+      [...rowsWrap.children].forEach(div => {
+        div.style.display = (only || div.dataset.status === "PRESENT" || div.dataset.status === "SIMILAR") ? "" : "none";
+      });
+      $("#fail", bx).textContent = only ? "Show failures" : "Show all";
+    };
+  }
+
+  /* Runner */
+  (function run() {
+    console.log("[QA v5.6] loaded");
+    const ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:24px";
+    const bx = document.createElement("div");
+    bx.style.cssText = "background:#101114;color:#e6e6e6;width:min(980px,96vw);max-height:90vh;border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.5);font:13px system-ui,Segoe UI,Roboto,Arial;padding:16px";
+    bx.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>Paste your spec (URL, TITLE, DESCRIPTION, and the text)</b><button id="x" style="padding:6px 10px;border:1px solid #3a3b40;border-radius:8px;background:#18191d;color:#e6e6e6;cursor:pointer">Close</button></div>
+<div style="display:flex;gap:12px;flex-direction:column"><textarea id="ta" style="width:100%;height:360px;border-radius:8px;background:#0e0f12;color:#e6e6e6;border:1px solid #2a2b31;padding:10px;white-space:pre"></textarea>
+<div style="display:flex;gap:8px;align-items:center;justify-content:space-between"><div id="err" style="color:#ff6b6b"></div>
+<div><button id="ok" style="padding:8px 12px;border:1px solid #2b864d;border-radius:8px;background:#2f9e5b;color:#fff;cursor:pointer;font-weight:600">Validate</button></div></div></div>`;
+    ov.appendChild(bx);
+    (document.body || document.documentElement).appendChild(ov);
+    bx.querySelector("#x").onclick = () => ov.remove();
+    bx.querySelector("#ok").onclick = () => {
+      const raw = bx.querySelector("#ta").value || "";
+      if (!raw.trim()) { bx.querySelector("#err").textContent = "Paste the spec first."; return; }
+      ov.remove();
+      const spec = parseSpec(raw);
+      const here = new URL(location.href);
+      const expectedPath = spec.url ? new URL(spec.url, here.origin).pathname : "";
+      const slugOK = spec.url ? (expectedPath === here.pathname) : false;
+      const meta = {
+        title: N(document.title || ""),
+        desc:  N(($('meta[name="description"]')?.getAttribute('content')) || "")
+      };
+      const metaRows = [
+        {
+          label: `Path`,
+          status: spec.url ? (slugOK ? "PRESENT" : "MISSING") : "MISSING",
+          sim: spec.url ? (slugOK ? 1 : 0) : 0,
+          match: here.pathname,
+          miss: (spec.url && !slugOK) ? expectedPath : ""
+        },
+        (() => {
+          const {best} = tfidfBest(spec.title || "", [meta.title]);
+          const sim = spec.title ? best : 0;
+          return {
+            label: "Title tag",
+            status: spec.title ? CLASS(sim) : "MISSING",
+            sim, match: meta.title,
+            miss: spec.title ? missTerms(spec.title, meta.title) : ""
+          };
+        })(),
+        (() => {
+          const {best} = tfidfBest(spec.desc || "", [meta.desc]);
+          const sim = spec.desc ? best : 0;
+          return {
+            label: "Meta description",
+            status: spec.desc ? CLASS(sim) : "MISSING",
+            sim, match: meta.desc,
+            miss: spec.desc ? missTerms(spec.desc, meta.desc) : ""
+          };
+        })()
+      ];
+
+      const blocks = sectionBlocks();
+
+      const rows = spec.expected.map((line, i) => {
+        const scope = pickScope(line, blocks);
+        // vet table augmentation stays the same
+        let scopedCandidates = collectCandidates(scope);
+        if (/\/\s*5\b/.test(line)) {
+          const vets = extractVetPairs();
+          if (vets.length) scopedCandidates = U(vets.concat(scopedCandidates));
+        }
+
+        // run with fallback
+        const { r, sim } = matchWithFallback(line, scope, blocks);
+
+        return {
+          label: `Line #${i + 1}: ${line.slice(0, 90)}${line.length > 90 ? "…" : ""}`,
+          status: CLASS(sim),
+          sim,
+          match: r.found || "",
+          miss: CLASS(sim) === "PRESENT" ? "" : missTerms(line, r.found || "")
+        };
+      });
+
+      showUI(rows, metaRows);
+    };
+  })();
+})();
