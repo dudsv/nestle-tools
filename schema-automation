@@ -11,13 +11,56 @@ function pickEl(selectors){ for(const sel of selectors){ const el=$(sel); if(el)
 
 /* ===================== Mapeamentos padrão (Purina + FamilyNes) ===================== */
 const DEFAULT_MAPPING={
-  h1:     ['#edit-title-0-value','[data-drupal-selector="edit-title-0-value"]'],
-  title:  ['#edit-field-ln-n-meta-tags-0-basic-title','[data-drupal-selector="edit-metatags-basic-title"]'],
-  desc:   ['#edit-field-ln-n-meta-tags-0-basic-description','[data-drupal-selector="edit-metatags-basic-description"]'],
-  ogtitle:['#edit-field-ln-n-meta-tags-0-open-graph-og-title','[data-drupal-selector="edit-metatags-open-graph-og-title"]'],
-  ogdesc: ['#edit-field-ln-n-meta-tags-0-open-graph-og-description','[data-drupal-selector="edit-metatags-open-graph-og-description"]'],
-  url:    ['[data-drupal-selector="edit-path-0-alias"]','#edit-path-0-alias']
+/* ===================== Mapeamentos padrão (Purina + FamilyNes + MX) ===================== */
+  // H1 e URL permanecem os mesmos
+  h1:     [
+    '#edit-title-0-value',
+    '[data-drupal-selector="edit-title-0-value"]'
+  ],
+  url:    [
+    '[data-drupal-selector="edit-path-0-alias"]',
+    '#edit-path-0-alias'
+  ],
+
+  // --- META BASIC (Title/Description) ---
+  // 🇲🇽 México (field_meta_tags[0]…) – PRIORIDADE 1
+  title:  [
+    '[name="field_meta_tags[0][basic][title]"]',
+    '#edit-field-meta-tags-0-basic-title',
+    '[data-drupal-selector="edit-field-meta-tags-0-basic-title"]',
+
+    // 🇪🇺 Purina/FamilyNes (ln-n-meta-tags…) – fallback
+    '#edit-field-ln-n-meta-tags-0-basic-title',
+    '[data-drupal-selector="edit-metatags-basic-title"]'
+  ],
+  desc:   [
+    '[name="field_meta_tags[0][basic][description]"]',
+    '#edit-field-meta-tags-0-basic-description',
+    '[data-drupal-selector="edit-field-meta-tags-0-basic-description"]',
+
+    '#edit-field-ln-n-meta-tags-0-basic-description',
+    '[data-drupal-selector="edit-metatags-basic-description"]'
+  ],
+
+  // --- OPEN GRAPH (og:title / og:description) ---
+  ogtitle:[
+    '[name="field_meta_tags[0][open_graph][og_title]"]',
+    '#edit-field-meta-tags-0-open-graph-og-title',
+    '[data-drupal-selector="edit-field-meta-tags-0-open-graph-og-title"]',
+
+    '#edit-field-ln-n-meta-tags-0-open-graph-og-title',
+    '[data-drupal-selector="edit-metatags-open-graph-og-title"]'
+  ],
+  ogdesc: [
+    '[name="field_meta_tags[0][open_graph][og_description]"]',
+    '#edit-field-meta-tags-0-open-graph-og-description',
+    '[data-drupal-selector="edit-field-meta-tags-0-open-graph-og-description"]',
+
+    '#edit-field-ln-n-meta-tags-0-open-graph-og-description',
+    '[data-drupal-selector="edit-metatags-open-graph-og-description"]'
+  ]
 };
+
 
 /* ===================== UI ===================== */
 const ov=document.createElement('div');
