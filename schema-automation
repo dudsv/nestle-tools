@@ -361,35 +361,65 @@ const APP_ID='schema-json-fill'; // apenas p/ manter nomes
 // Tipo atual de schema (Article, Products, Recipes)
 let CURRENT_SCHEMA_TYPE = 'article';
 
-// Maps por tipo: começamos com Article (o seu MAP atual). Products/Recipes virão depois.
-const MAPS = {
-  article: null,   // receberá o MAP existente
-  products: [],    // vazio por enquanto (não acusa faltas)
-  recipes:  []     // vazio por enquanto (não acusa faltas)
+// ===================== Schema Maps =====================
+
+// (Opcional) Enum de tipos para evitar typos
+const SCHEMA_TYPES = {
+  ARTICLE:  'article',
+  PRODUCTS: 'products',
+  RECIPES:  'recipes',
 };
 
-// === MAP base (Article) — mantém exatamente o que você já tinha ===
-const MAP = [
-  { path:'@type',                  name:'metatags[schema_article][schema_article_type]',                    type:'select', token:'schema_article_type' },
-  { path:'mainEntityOfPage.@id',   name:'metatags[schema_article][schema_article_main_entity_of_page]',           token:'schema_article_main_entity_of_page' },
-  { path:'headline',               name:'metatags[schema_article][schema_article_headline]',                      token:'schema_article_headline' },
-  { path:'description',            name:'metatags[schema_article][schema_article_description]',                   token:'schema_article_description' },
-  { path:'image.@type',            name:'metatags[schema_article][schema_article_image][@type]',            type:'select', token:'schema_article_image.@type' },
-  { path:'image.url',              name:'metatags[schema_article][schema_article_image][url]',                    token:'schema_article_image.url' },
-  { path:'datePublished',          name:'metatags[schema_article][schema_article_date_published]',                token:'schema_article_date_published' },
-  { path:'publisher.@type',        name:'metatags[schema_article][schema_article_publisher][@type]',       type:'select', token:'schema_article_publisher.@type' },
-  { path:'publisher.name',         name:'metatags[schema_article][schema_article_publisher][name]',               token:'schema_article_publisher.name' },
-  { path:'publisher.logo.@type',   name:'metatags[schema_article][schema_article_publisher][logo][@type]', type:'select', token:'schema_article_publisher.logo.@type' },
-  { path:'publisher.logo.url',     name:'metatags[schema_article][schema_article_publisher][logo][url]',          token:'schema_article_publisher.logo.url' },
+// --- MAP: Article (seu atual, intacto) ---
+const ARTICLE_MAP = [
+  { path:'@type',                  name:'metatags[schema_article][schema_article_type]',                          type:'select', token:'schema_article_type' },
+  { path:'mainEntityOfPage.@id',   name:'metatags[schema_article][schema_article_main_entity_of_page]',                                token:'schema_article_main_entity_of_page' },
+  { path:'headline',               name:'metatags[schema_article][schema_article_headline]',                                           token:'schema_article_headline' },
+  { path:'description',            name:'metatags[schema_article][schema_article_description]',                                        token:'schema_article_description' },
+  { path:'image.@type',            name:'metatags[schema_article][schema_article_image][@type]',                type:'select',          token:'schema_article_image.@type' },
+  { path:'image.url',              name:'metatags[schema_article][schema_article_image][url]',                                        token:'schema_article_image.url' },
+  { path:'datePublished',          name:'metatags[schema_article][schema_article_date_published]',                                    token:'schema_article_date_published' },
+  { path:'publisher.@type',        name:'metatags[schema_article][schema_article_publisher][@type]',           type:'select',          token:'schema_article_publisher.@type' },
+  { path:'publisher.name',         name:'metatags[schema_article][schema_article_publisher][name]',                                    token:'schema_article_publisher.name' },
+  { path:'publisher.logo.@type',   name:'metatags[schema_article][schema_article_publisher][logo][@type]',     type:'select',          token:'schema_article_publisher.logo.@type' },
+  { path:'publisher.logo.url',     name:'metatags[schema_article][schema_article_publisher][logo][url]',                               token:'schema_article_publisher.logo.url' },
 
   // opcionais + fallbacks
-  { path:'@id',                    name:'metatags[schema_article][schema_article_id]',                            token:'schema_article_id' },
-  { path:'name',                   name:'metatags[schema_article][schema_article_name]',                          token:'schema_article_name' },
+  { path:'@id',                    name:'metatags[schema_article][schema_article_id]',                                                 token:'schema_article_id' },
+  { path:'name',                   name:'metatags[schema_article][schema_article_name]',                                               token:'schema_article_name' },
 ];
 
-// Registra o MAP de Article no dicionário
-MAPS.article = MAP;
+// --- MAP: Products (do seu dump) ---
+const PRODUCTS_MAP = [
+  // raiz
+  { path:'@type',        name:'metatags[schema_product][schema_product_type]',                                   type:'select', token:'schema_product_type' },
+  { path:'name',         name:'metatags[schema_product][schema_product_name]',                                                  token:'schema_product_name' },
+  { path:'description',  name:'metatags[schema_product][schema_product_description]',                                           token:'schema_product_description' },
+  { path:'url',          name:'metatags[schema_product][schema_product_url]',                                                   token:'schema_product_url' },
 
+  // image
+  { path:'image.@type',  name:'metatags[schema_product][schema_product_image][@type]',                       type:'select',     token:'schema_product_image.@type' },
+  { path:'image.url',    name:'metatags[schema_product][schema_product_image][url]',                                          token:'schema_product_image.url' },
+
+  // brand
+  { path:'brand.@type',  name:'metatags[schema_product][schema_product_brand][@type]',                       type:'select',     token:'schema_product_brand.@type' },
+  { path:'brand.name',   name:'metatags[schema_product][schema_product_brand][name]',                                         token:'schema_product_brand.name' },
+
+  // aggregateRating
+  { path:'aggregateRating.@type',       name:'metatags[schema_product][schema_product_aggregate_rating][@type]', type:'select', token:'schema_product_aggregate_rating.@type' },
+  { path:'aggregateRating.ratingValue', name:'metatags[schema_product][schema_product_aggregate_rating][ratingValue]',        token:'schema_product_aggregate_rating.ratingValue' },
+  { path:'aggregateRating.ratingCount', name:'metatags[schema_product][schema_product_aggregate_rating][ratingCount]',        token:'schema_product_aggregate_rating.ratingCount' },
+];
+
+// --- MAP: Recipes (placeholder; vazio por enquanto) ---
+const RECIPES_MAP = [];
+
+// Dicionário final dos mapas por tipo
+const MAPS = {
+  [SCHEMA_TYPES.ARTICLE]:  ARTICLE_MAP,
+  [SCHEMA_TYPES.PRODUCTS]: PRODUCTS_MAP,
+  [SCHEMA_TYPES.RECIPES]:  RECIPES_MAP,
+};
 
 function sanitizeText(v){ if(typeof v!=='string') return v;
   return v.replace(/[\u201C\u201D\u201E\u201F\u2033]/g,'"').replace(/[\u2018\u2019\u2032]/g,"'")
@@ -520,6 +550,35 @@ function applySchema(){
       const nm = getByPath(data,'name') || getByPath(data,'headline');
       if (nm) setFieldByName(nameName, nm, undefined, 'schema_article_name');
     }
+
+    if (CURRENT_SCHEMA_TYPE === 'products') {
+  // image string → image.url
+  const imageStr = getByPath(data, 'image');
+  const imgUrlName = 'metatags[schema_product][schema_product_image][url]';
+  const imgUrlEl   = findElByAny({ name: imgUrlName, token: 'schema_product_image.url' });
+  if (imgUrlEl && !imgUrlEl.value && typeof imageStr === 'string' && imageStr.trim()) {
+    setFieldByName(imgUrlName, imageStr.trim(), undefined, 'schema_product_image.url');
+  }
+
+  // defaults selects
+  [
+    { name:'metatags[schema_product][schema_product_image][@type]',           expect:'ImageObject',     type:'select', token:'schema_product_image.@type' },
+    { name:'metatags[schema_product][schema_product_brand][@type]',           expect:'Organization',    type:'select', token:'schema_product_brand.@type' },
+    { name:'metatags[schema_product][schema_product_aggregate_rating][@type]',expect:'AggregateRating', type:'select', token:'schema_product_aggregate_rating.@type' },
+  ].forEach(t=>{
+    const el = findElByAny({ name:t.name, token:t.token });
+    if (el && !el.value) setFieldByName(t.name, t.expect, t.type, t.token);
+  });
+
+  // reviewCount → ratingCount
+  const rc = getByPath(data, 'aggregateRating.reviewCount');
+  const ratingCountName = 'metatags[schema_product][schema_product_aggregate_rating][ratingCount]';
+  const ratingCountEl   = findElByAny({ name: ratingCountName, token:'schema_product_aggregate_rating.ratingCount' });
+  if (ratingCountEl && !ratingCountEl.value && rc != null && (''+rc).trim()) {
+    setFieldByName(ratingCountName, rc, undefined, 'schema_product_aggregate_rating.ratingCount');
+  }
+}
+
 
     // Defaults de selects se vazios
     [
