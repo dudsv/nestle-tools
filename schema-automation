@@ -139,6 +139,12 @@ bx.innerHTML=`
   <!-- Pane de Schema (apenas campo + botão aplicar, usando SEU MAP) -->
   <div id="pane-schema" style="display:none">
     <div style="opacity:.85;margin-bottom:6px"><b>Schema JSON-LD</b> — cole o JSON (puro) ou o bloco &lt;script type="application/ld+json"&gt;…</div>
+    <div id="sch-types" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 6px">
+    <button id="sch-type-article"  style="padding:6px 10px;border:1px solid #444;border-radius:8px;background:#2a7;color:#111;font-weight:600">Articles</button>
+    <button id="sch-type-products" style="padding:6px 10px;border:1px solid #444;border-radius:8px;background:#222;color:#eee">Products</button>
+    <button id="sch-type-recipes"  style="padding:6px 10px;border:1px solid #444;border-radius:8px;background:#222;color:#eee">Recipes</button>
+    </div>
+
     <textarea id="sch-json" placeholder='Cole aqui…' style="width:100%;min-height:240px;background:#181818;color:#ddd;border:1px solid #333;border-radius:10px;padding:10px;"></textarea>
 
     <div style="display:flex;gap:8px;margin-top:12px">
@@ -351,7 +357,19 @@ const slog=(m,cls='')=>{ SLOG.textContent+= (cls?`[${cls}] `:'') + m + '\n'; SLO
 
 // === funções do seu snippet (adaptadas só para usar IDs locais) ===
 const APP_ID='schema-json-fill'; // apenas p/ manter nomes
-const MAP=[
+
+// Tipo atual de schema (Article, Products, Recipes)
+let CURRENT_SCHEMA_TYPE = 'article';
+
+// Maps por tipo: começamos com Article (o seu MAP atual). Products/Recipes virão depois.
+const MAPS = {
+  article: null,   // receberá o MAP existente
+  products: [],    // vazio por enquanto (não acusa faltas)
+  recipes:  []     // vazio por enquanto (não acusa faltas)
+};
+
+// === MAP base (Article) — mantém exatamente o que você já tinha ===
+const MAP = [
   { path:'@type',                  name:'metatags[schema_article][schema_article_type]',                    type:'select', token:'schema_article_type' },
   { path:'mainEntityOfPage.@id',   name:'metatags[schema_article][schema_article_main_entity_of_page]',           token:'schema_article_main_entity_of_page' },
   { path:'headline',               name:'metatags[schema_article][schema_article_headline]',                      token:'schema_article_headline' },
@@ -368,6 +386,9 @@ const MAP=[
   { path:'@id',                    name:'metatags[schema_article][schema_article_id]',                            token:'schema_article_id' },
   { path:'name',                   name:'metatags[schema_article][schema_article_name]',                          token:'schema_article_name' },
 ];
+
+// Registra o MAP de Article no dicionário
+MAPS.article = MAP;
 
 
 function sanitizeText(v){ if(typeof v!=='string') return v;
@@ -404,13 +425,48 @@ function setFieldByName(name, value, kind, token=null){
   return true;
 }
 
+function setSchemaTypeButtonsUI(active){
+  const btns = [
+    ['article',  $('#sch-type-article')],
+    ['products', $('#sch-type-products')],
+    ['recipes',  $('#sch-type-recipes')]
+  ];
+  btns.forEach(([type,btn])=>{
+    if(!btn) return;
+    if(type===active){
+      btn.style.background = '#2a7';
+      btn.style.color = '#111';
+      btn.style.fontWeight = '600';
+    } else {
+      btn.style.background = '#222';
+      btn.style.color = '#eee';
+      btn.style.fontWeight = '400';
+    }
+  });
+}
+
+function setSchemaType(t){
+  if(!MAPS[t]) return; // segurança
+  CURRENT_SCHEMA_TYPE = t;
+  setSchemaTypeButtonsUI(t);
+  slog(`Schema Type: ${t}`, 'ok');
+}
+
+// Eventos dos botões
+$('#sch-type-article') ?.addEventListener('click', ()=>setSchemaType('article'));
+$('#sch-type-products')?.addEventListener('click', ()=>setSchemaType('products'));
+$('#sch-type-recipes') ?.addEventListener('click', ()=>setSchemaType('recipes'));
+
+// Estado inicial
+setSchemaTypeButtonsUI(CURRENT_SCHEMA_TYPE);
+
 
 function applySchema(){
-  SLOG.textContent='';
+  SLOG.textContent = '';
   const raw = $('#sch-json').value.trim();
   if (!raw) { slog('Nada para processar.','warn'); return; }
 
-  // 1) Tentar carregar "items" (mapa). Se deu certo, apenas registra e sai.
+  // 1) Se o conteúdo for um dump "items", apenas atualiza o mapa e sai
   try {
     const asObj = JSON.parse(raw);
     if (asObj && Array.isArray(asObj.items)) {
@@ -419,70 +475,74 @@ function applySchema(){
         return;
       }
     }
-  } catch { /* silêncio: pode não ser JSON simples; segue adiante */ }
+  } catch { /* pode não ser JSON puro; seguimos */ }
 
-  // 2) Caso contrário, tratar como JSON-LD (com ou sem <script>)
+  // 2) Tratar como JSON-LD (com ou sem <script>)
   const jsonText = extractJsonText(raw);
   let data;
-  try{ data=JSON.parse(jsonText); slog('JSON válido.','ok'); }
-  catch(e){ slog('JSON inválido: '+e.message,'err'); slog('Prévia: '+jsonText.slice(0,140)+(jsonText.length>140?'…':''),'warn'); return; }
+  try {
+    data = JSON.parse(jsonText);
+    slog('JSON válido.','ok');
+  } catch (e) {
+    slog('JSON inválido: ' + e.message, 'err');
+    slog('Prévia: ' + jsonText.slice(0,140) + (jsonText.length>140?'…':''), 'warn');
+    return;
+  }
 
-  // 3) Aplica exatamente o MAP (e agora reporta ausências)
-  const applied = [];
-  const missingJson = []; // path não existe no JSON
-  const missingDom  = []; // existe no JSON, mas não achei o campo no DOM
+  // 3) Aplica o MAP do tipo selecionado; só reporta quando há valor e não aplicou no DOM
+  const ACTIVE_MAP = MAPS[CURRENT_SCHEMA_TYPE] || [];
+  const applied    = [];
+  const missingDom = [];
 
-  MAP.forEach(m=>{
+  ACTIVE_MAP.forEach(m => {
     const val = getByPath(data, m.path);
-    const has = val !== undefined && val !== null && (''+val).trim() !== '';
-    if (has) {
-      const ok = setFieldByName(m.name, val, m.type, m.token || null);
-      if (ok) {
-        applied.push(m);
-      } else {
-        // setFieldByName já loga "não encontrei ...", mas guardamos para resumo
-        missingDom.push(m);
-      }
-    } else {
-      missingJson.push(m);
-      slog(`faltando no JSON → path: ${m.path}  ↳ esperado em: ${m.name}`, 'miss');
+    const has = val !== undefined && val !== null && ('' + val).trim() !== '';
+    if (!has) return; // silencioso: ausente no JSON não é problema
+    const ok = setFieldByName(m.name, val, m.type, m.token || null);
+    if (ok) applied.push(m);
+    else    missingDom.push({ m, val });
+  });
+
+  // 4) Fallbacks/defaults específicos de Article (opcionais; não geram "faltando no JSON")
+  if (CURRENT_SCHEMA_TYPE === 'article') {
+    // Fallback: schema_article_id ← @id || mainEntityOfPage.@id (se vazio)
+    const idName = 'metatags[schema_article][schema_article_id]';
+    const idEl   = findElByAny({ name:idName, token:'schema_article_id' });
+    if (idEl && !idEl.value) {
+      const mid = getByPath(data,'@id') || getByPath(data,'mainEntityOfPage.@id');
+      if (mid) setFieldByName(idName, mid, undefined, 'schema_article_id');
     }
-  });
 
-  // 4) Fallbacks se vazios (id/name) — também passam token
-  const idName='metatags[schema_article][schema_article_id]';
-  const idEl = findElByAny({ name:idName, token:'schema_article_id' });
-  if(idEl && !idEl.value){
-    const mid=getByPath(data,'@id') || getByPath(data,'mainEntityOfPage.@id');
-    if(mid) setFieldByName(idName, mid, undefined, 'schema_article_id');
+    // Fallback: schema_article_name ← name || headline (se vazio)
+    const nameName = 'metatags[schema_article][schema_article_name]';
+    const nameEl   = findElByAny({ name:nameName, token:'schema_article_name' });
+    if (nameEl && !nameEl.value) {
+      const nm = getByPath(data,'name') || getByPath(data,'headline');
+      if (nm) setFieldByName(nameName, nm, undefined, 'schema_article_name');
+    }
+
+    // Defaults de selects se vazios
+    [
+      { name:'metatags[schema_article][schema_article_type]',                 expect:'Article',     type:'select', token:'schema_article_type' },
+      { name:'metatags[schema_article][schema_article_image][@type]',         expect:'ImageObject', type:'select', token:'schema_article_image.@type' },
+      { name:'metatags[schema_article][schema_article_publisher][@type]',     expect:'Organization',type:'select', token:'schema_article_publisher.@type' },
+      { name:'metatags[schema_article][schema_article_publisher][logo][@type]',expect:'ImageObject',type:'select', token:'schema_article_publisher.logo.@type' },
+    ].forEach(t => {
+      const el = findElByAny({ name:t.name, token:t.token });
+      if (el && !el.value) setFieldByName(t.name, t.expect, t.type, t.token);
+    });
   }
 
-  const nameName='metatags[schema_article][schema_article_name]';
-  const nameEl = findElByAny({ name:nameName, token:'schema_article_name' });
-  if(nameEl && !nameEl.value){
-    const nm=getByPath(data,'name') || getByPath(data,'headline');
-    if(nm) setFieldByName(nameName, nm, undefined, 'schema_article_name');
+  // 5) Resumo (sem "faltando no JSON")
+  if (applied.length) slog(`✅ Aplicados: ${applied.length}`, 'ok');
+  if (missingDom.length) {
+    slog(`⚠️ Não aplicado (campo não encontrado no DOM): ${missingDom.length}`, 'warn');
+    missingDom.forEach(({ m }) => {
+      slog(`  • ${m.name}  ← do JSON path "${m.path}"`, 'warn');
+    });
   }
-
-  // 5) Defaults esperados p/ selects (se vazios)
-  [
-    { name:'metatags[schema_article][schema_article_type]', expect:'Article', type:'select', token:'schema_article_type' },
-    { name:'metatags[schema_article][schema_article_image][@type]', expect:'ImageObject', type:'select', token:'schema_article_image.@type' },
-    { name:'metatags[schema_article][schema_article_publisher][@type]', expect:'Organization', type:'select', token:'schema_article_publisher.@type' },
-    { name:'metatags[schema_article][schema_article_publisher][logo][@type]', expect:'ImageObject', type:'select', token:'schema_article_publisher.logo.@type' },
-  ].forEach(t=>{
-    const el = findElByAny({ name:t.name, token:t.token });
-    if(el && !el.value) setFieldByName(t.name, t.expect, t.type, t.token);
-  });
-  
-  // Resumo
-  if (applied.length)   slog(`✅ Aplicados: ${applied.length}`, 'ok');
-  if (missingDom.length) slog(`⚠️ Campos sem elemento no DOM: ${missingDom.length}`, 'warn');
-  if (missingJson.length) slog(`❌ Faltando no JSON: ${missingJson.length}`, 'miss');
-
   slog('Concluído.','ok');
 }
-
 
 $('#sch-apply').onclick=applySchema;
 
