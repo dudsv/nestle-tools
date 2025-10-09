@@ -464,6 +464,11 @@ function extractJsonText(raw){
 function setFieldByName(name, value, kind, token=null){
   const el = findElByAny({ name, token });
   if(!el){ slog(`não encontrei ${name}${token?` (token:${token})`:''}`,'warn'); return false; }
+
+  // Aviso específico para recipeIngredient em input:text
+  if (token === 'schema_recipe_recipe_ingredient' && el.tagName === 'INPUT' && typeof value === 'string' && value.includes('\n')) {
+    slog('aviso: recipeIngredient está em <input type="text"> — que pode não aceitar múltiplas linhas. Ideal: textarea.', 'warn');
+  }
   let v = sanitizeText(value);
   if(kind==='select' || el.tagName==='SELECT'){
     const opt=[...el.options].find(o=>o.value==v) || [...el.options].find(o=>(o.textContent||'').trim()==v);
@@ -547,17 +552,27 @@ function applySchema(){
 
     ACTIVE_MAP.forEach(m => {
     const valRaw = getByPath(data, m.path);
+      ACTIVE_MAP.forEach(m => {
+    const valRaw = getByPath(data, m.path);
     const has = valRaw !== undefined && valRaw !== null && ('' + valRaw).trim?.() !== '';
-    if (!has) return; // ausente no JSON não é problema
+    if (!has) return;
 
-    // NOVO: se for array, junta em linhas (ou troque por ', ' se preferir)
-    const val = Array.isArray(valRaw) ? valRaw.map(x => (x==null?'':String(x))).join('\n') : valRaw;
+    // --- NOVO: arrays → 1 item por linha (ex.: recipeIngredient)
+    let val;
+    if (Array.isArray(valRaw)) {
+      const clean = s => String(s ?? '')
+        .replace(/^\s*[-•\d.)]+\s*/,'') // tira bullets/numeração comuns
+        .replace(/\s+/g,' ')
+        .trim();
+      val = valRaw.map(clean).filter(Boolean).join('\n');
+    } else {
+      val = valRaw;
+    }
 
     const ok = setFieldByName(m.name, val, m.type, m.token || null);
     if (ok) applied.push(m);
     else    missingDom.push({ m, val });
   });
-
 
     // 4) Fallbacks/defaults específicos por tipo (não geram "faltando no JSON")
 
