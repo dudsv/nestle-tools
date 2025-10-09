@@ -509,10 +509,13 @@ function setSchemaType(t){
 }
 
 // Eventos dos botões
-$('#sch-type-article') ?.addEventListener('click', ()=>setSchemaType('article'));
-$('#sch-type-products')?.addEventListener('click', ()=>setSchemaType('products'));
-$('#sch-type-recipes') ?.addEventListener('click', ()=>setSchemaType('recipes'));
+const _btnArticle  = $('#sch-type-article');
+const _btnProducts = $('#sch-type-products');
+const _btnRecipes  = $('#sch-type-recipes');
 
+if (_btnArticle)  _btnArticle.addEventListener('click',  ()=>setSchemaType('article'));
+if (_btnProducts) _btnProducts.addEventListener('click', ()=>setSchemaType('products'));
+if (_btnRecipes)  _btnRecipes.addEventListener('click',  ()=>setSchemaType('recipes'));
 // Estado inicial
 setSchemaTypeButtonsUI(CURRENT_SCHEMA_TYPE);
 
