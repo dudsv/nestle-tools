@@ -261,17 +261,21 @@ const SLOG=$('#sch-log');
 let SCHEMA_NAME_INDEX = Object.create(null); // token -> { name, css, id }
 
 function normalizeToken(tokens) {
-  // tokens = ['field_meta_tags','0','schema_article','schema_article_type'] -> 'schema_article.schema_article_type'
+  // tokens -> ancora em schema_article | schema_product | schema_recipe e retorna o restante como token
   if (!Array.isArray(tokens)) return null;
-  const i = Math.max(tokens.indexOf('schema_article'), 0);
-  const slice = tokens.slice(i); // ['schema_article','schema_article_type', ...]
-  // Se vier ['schema_article','schema_article_image','@type'] → 'schema_article_image.@type'
+  let i = tokens.indexOf('schema_article');
+  if (i < 0) i = tokens.indexOf('schema_product');
+  if (i < 0) i = tokens.indexOf('schema_recipe');
+  if (i < 0) i = 0;
+  const slice = tokens.slice(i);
   if (slice.length >= 2) {
-    const head = slice[0] === 'schema_article' ? slice.slice(1) : slice;
-    return head.join('.'); // ex: "schema_article_type" | "schema_article_image.@type"
+    const head = (slice[0] === 'schema_article' || slice[0] === 'schema_product' || slice[0] === 'schema_recipe')
+      ? slice.slice(1) : slice;
+    return head.join('.'); // ex.: "schema_recipe_author.@type"
   }
   return null;
 }
+
 
 function updateSchemaNameIndexFromItems(jsonText) {
   try {
@@ -411,8 +415,25 @@ const PRODUCTS_MAP = [
   { path:'aggregateRating.ratingCount', name:'metatags[schema_product][schema_product_aggregate_rating][ratingCount]',        token:'schema_product_aggregate_rating.ratingCount' },
 ];
 
-// --- MAP: Recipes (placeholder; vazio por enquanto) ---
-const RECIPES_MAP = [];
+// --- MAP: Recipes ---
+const RECIPES_MAP = [
+  // raiz
+  { path:'@type',           name:'metatags[schema_recipe][schema_recipe_type]',                 type:'select', token:'schema_recipe_type' },
+  { path:'name',            name:'metatags[schema_recipe][schema_recipe_name]',                               token:'schema_recipe_name' },
+  { path:'description',     name:'metatags[schema_recipe][schema_recipe_description]',                        token:'schema_recipe_description' },
+  { path:'datePublished',   name:'metatags[schema_recipe][schema_recipe_date_published]',                     token:'schema_recipe_date_published' },
+
+  // ingredientes (array no JSON)
+  { path:'recipeIngredient', name:'metatags[schema_recipe][schema_recipe_recipe_ingredient]',                 token:'schema_recipe_recipe_ingredient' },
+
+  // autor
+  { path:'author.@type',    name:'metatags[schema_recipe][schema_recipe_author][@type]',        type:'select', token:'schema_recipe_author.@type' },
+  { path:'author.name',     name:'metatags[schema_recipe][schema_recipe_author][name]',                      token:'schema_recipe_author.name' },
+
+  // instruções (string longa)
+  { path:'recipeInstructions', name:'metatags[schema_recipe][schema_recipe_recipe_instructions]',            token:'schema_recipe_recipe_instructions' },
+];
+
 
 // Dicionário final dos mapas por tipo
 const MAPS = {
@@ -524,16 +545,23 @@ function applySchema(){
   const applied    = [];
   const missingDom = [];
 
-  ACTIVE_MAP.forEach(m => {
-    const val = getByPath(data, m.path);
-    const has = val !== undefined && val !== null && ('' + val).trim() !== '';
-    if (!has) return; // silencioso: ausente no JSON não é problema
+    ACTIVE_MAP.forEach(m => {
+    const valRaw = getByPath(data, m.path);
+    const has = valRaw !== undefined && valRaw !== null && ('' + valRaw).trim?.() !== '';
+    if (!has) return; // ausente no JSON não é problema
+
+    // NOVO: se for array, junta em linhas (ou troque por ', ' se preferir)
+    const val = Array.isArray(valRaw) ? valRaw.map(x => (x==null?'':String(x))).join('\n') : valRaw;
+
     const ok = setFieldByName(m.name, val, m.type, m.token || null);
     if (ok) applied.push(m);
     else    missingDom.push({ m, val });
   });
 
-  // 4) Fallbacks/defaults específicos de Article (opcionais; não geram "faltando no JSON")
+
+    // 4) Fallbacks/defaults específicos por tipo (não geram "faltando no JSON")
+
+  // ARTICLE
   if (CURRENT_SCHEMA_TYPE === 'article') {
     // Fallback: schema_article_id ← @id || mainEntityOfPage.@id (se vazio)
     const idName = 'metatags[schema_article][schema_article_id]';
@@ -551,46 +579,61 @@ function applySchema(){
       if (nm) setFieldByName(nameName, nm, undefined, 'schema_article_name');
     }
 
-    if (CURRENT_SCHEMA_TYPE === 'products') {
-  // image string → image.url
-  const imageStr = getByPath(data, 'image');
-  const imgUrlName = 'metatags[schema_product][schema_product_image][url]';
-  const imgUrlEl   = findElByAny({ name: imgUrlName, token: 'schema_product_image.url' });
-  if (imgUrlEl && !imgUrlEl.value && typeof imageStr === 'string' && imageStr.trim()) {
-    setFieldByName(imgUrlName, imageStr.trim(), undefined, 'schema_product_image.url');
-  }
-
-  // defaults selects
-  [
-    { name:'metatags[schema_product][schema_product_image][@type]',           expect:'ImageObject',     type:'select', token:'schema_product_image.@type' },
-    { name:'metatags[schema_product][schema_product_brand][@type]',           expect:'Organization',    type:'select', token:'schema_product_brand.@type' },
-    { name:'metatags[schema_product][schema_product_aggregate_rating][@type]',expect:'AggregateRating', type:'select', token:'schema_product_aggregate_rating.@type' },
-  ].forEach(t=>{
-    const el = findElByAny({ name:t.name, token:t.token });
-    if (el && !el.value) setFieldByName(t.name, t.expect, t.type, t.token);
-  });
-
-  // reviewCount → ratingCount
-  const rc = getByPath(data, 'aggregateRating.reviewCount');
-  const ratingCountName = 'metatags[schema_product][schema_product_aggregate_rating][ratingCount]';
-  const ratingCountEl   = findElByAny({ name: ratingCountName, token:'schema_product_aggregate_rating.ratingCount' });
-  if (ratingCountEl && !ratingCountEl.value && rc != null && (''+rc).trim()) {
-    setFieldByName(ratingCountName, rc, undefined, 'schema_product_aggregate_rating.ratingCount');
-  }
-}
-
-
-    // Defaults de selects se vazios
+    // Defaults de selects
     [
-      { name:'metatags[schema_article][schema_article_type]',                 expect:'Article',     type:'select', token:'schema_article_type' },
-      { name:'metatags[schema_article][schema_article_image][@type]',         expect:'ImageObject', type:'select', token:'schema_article_image.@type' },
-      { name:'metatags[schema_article][schema_article_publisher][@type]',     expect:'Organization',type:'select', token:'schema_article_publisher.@type' },
-      { name:'metatags[schema_article][schema_article_publisher][logo][@type]',expect:'ImageObject',type:'select', token:'schema_article_publisher.logo.@type' },
+      { name:'metatags[schema_article][schema_article_type]',                  expect:'Article',      type:'select', token:'schema_article_type' },
+      { name:'metatags[schema_article][schema_article_image][@type]',          expect:'ImageObject',  type:'select', token:'schema_article_image.@type' },
+      { name:'metatags[schema_article][schema_article_publisher][@type]',      expect:'Organization', type:'select', token:'schema_article_publisher.@type' },
+      { name:'metatags[schema_article][schema_article_publisher][logo][@type]',expect:'ImageObject',  type:'select', token:'schema_article_publisher.logo.@type' },
     ].forEach(t => {
       const el = findElByAny({ name:t.name, token:t.token });
       if (el && !el.value) setFieldByName(t.name, t.expect, t.type, t.token);
     });
   }
+
+  // PRODUCTS
+  if (CURRENT_SCHEMA_TYPE === 'products') {
+    // image string → image.url (se o JSON tiver "image": "https://...")
+    const imageStr = getByPath(data, 'image');
+    const imgUrlName = 'metatags[schema_product][schema_product_image][url]';
+    const imgUrlEl   = findElByAny({ name: imgUrlName, token: 'schema_product_image.url' });
+    if (imgUrlEl && !imgUrlEl.value && typeof imageStr === 'string' && imageStr.trim()) {
+      setFieldByName(imgUrlName, imageStr.trim(), undefined, 'schema_product_image.url');
+    }
+
+    // Defaults de selects
+    [
+      { name:'metatags[schema_product][schema_product_image][@type]',           expect:'ImageObject',     type:'select', token:'schema_product_image.@type' },
+      { name:'metatags[schema_product][schema_product_brand][@type]',           expect:'Organization',    type:'select', token:'schema_product_brand.@type' },
+      { name:'metatags[schema_product][schema_product_aggregate_rating][@type]',expect:'AggregateRating', type:'select', token:'schema_product_aggregate_rating.@type' },
+    ].forEach(t=>{
+      const el = findElByAny({ name:t.name, token:t.token });
+      if (el && !el.value) setFieldByName(t.name, t.expect, t.type, t.token);
+    });
+
+    // reviewCount → ratingCount (se vier assim no JSON)
+    const rc = getByPath(data, 'aggregateRating.reviewCount');
+    const ratingCountName = 'metatags[schema_product][schema_product_aggregate_rating][ratingCount]';
+    const ratingCountEl   = findElByAny({ name: ratingCountName, token:'schema_product_aggregate_rating.ratingCount' });
+    if (ratingCountEl && !ratingCountEl.value && rc != null && (''+rc).trim()) {
+      setFieldByName(ratingCountName, rc, undefined, 'schema_product_aggregate_rating.ratingCount');
+    }
+  }
+
+  // RECIPES
+  if (CURRENT_SCHEMA_TYPE === 'recipes') {
+    // recipeIngredient já vira string no loop (join '\n'), então só defaults aqui
+
+    // Defaults de selects (autor)
+    [
+      { name:'metatags[schema_recipe][schema_recipe_author][@type]', expect:'Person', type:'select', token:'schema_recipe_author.@type' },
+      { name:'metatags[schema_recipe][schema_recipe_type]',          expect:'Recipe', type:'select', token:'schema_recipe_type' },
+    ].forEach(t=>{
+      const el = findElByAny({ name:t.name, token:t.token });
+      if (el && !el.value) setFieldByName(t.name, t.expect, t.type, t.token);
+    });
+  }
+
 
   // 5) Resumo (sem "faltando no JSON")
   if (applied.length) slog(`✅ Aplicados: ${applied.length}`, 'ok');
