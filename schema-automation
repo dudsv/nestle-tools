@@ -427,11 +427,25 @@ function applySchema(){
   try{ data=JSON.parse(jsonText); slog('JSON válido.','ok'); }
   catch(e){ slog('JSON inválido: '+e.message,'err'); slog('Prévia: '+jsonText.slice(0,140)+(jsonText.length>140?'…':''),'warn'); return; }
 
-  // 3) Aplica exatamente o MAP (tentando nomes antigos, variantes e o mapa "items" via token)
+  // 3) Aplica exatamente o MAP (e agora reporta ausências)
+  const applied = [];
+  const missingJson = []; // path não existe no JSON
+  const missingDom  = []; // existe no JSON, mas não achei o campo no DOM
+
   MAP.forEach(m=>{
-    const val=getByPath(data,m.path);
-    if(val!==undefined && val!==null && (''+val).trim()!==''){
-      setFieldByName(m.name,val,m.type,m.token||null);
+    const val = getByPath(data, m.path);
+    const has = val !== undefined && val !== null && (''+val).trim() !== '';
+    if (has) {
+      const ok = setFieldByName(m.name, val, m.type, m.token || null);
+      if (ok) {
+        applied.push(m);
+      } else {
+        // setFieldByName já loga "não encontrei ...", mas guardamos para resumo
+        missingDom.push(m);
+      }
+    } else {
+      missingJson.push(m);
+      slog(`faltando no JSON → path: ${m.path}  ↳ esperado em: ${m.name}`, 'miss');
     }
   });
 
@@ -460,6 +474,11 @@ function applySchema(){
     const el = findElByAny({ name:t.name, token:t.token });
     if(el && !el.value) setFieldByName(t.name, t.expect, t.type, t.token);
   });
+  
+  // Resumo
+  if (applied.length)   slog(`✅ Aplicados: ${applied.length}`, 'ok');
+  if (missingDom.length) slog(`⚠️ Campos sem elemento no DOM: ${missingDom.length}`, 'warn');
+  if (missingJson.length) slog(`❌ Faltando no JSON: ${missingJson.length}`, 'miss');
 
   slog('Concluído.','ok');
 }
