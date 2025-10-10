@@ -549,33 +549,31 @@ function applySchema(){
   }
 
   // 3) Aplica o MAP do tipo selecionado; só reporta quando há valor e não aplicou no DOM
-  const ACTIVE_MAP = MAPS[CURRENT_SCHEMA_TYPE] || [];
-  const applied    = [];
-  const missingDom = [];
+const ACTIVE_MAP = MAPS[CURRENT_SCHEMA_TYPE] || [];
+const applied    = [];
+const missingDom = [];
 
-    ACTIVE_MAP.forEach(m => {
-    const valRaw = getByPath(data, m.path);
-      ACTIVE_MAP.forEach(m => {
-    const valRaw = getByPath(data, m.path);
-    const has = valRaw !== undefined && valRaw !== null && ('' + valRaw).trim?.() !== '';
-    if (!has) return;
+ACTIVE_MAP.forEach(m => {
+  const valRaw = getByPath(data, m.path);
+  const has = valRaw !== undefined && valRaw !== null && ('' + valRaw).trim?.() !== '';
+  if (!has) return;
 
-    // --- NOVO: arrays → 1 item por linha (ex.: recipeIngredient)
-    let val;
-    if (Array.isArray(valRaw)) {
-      const clean = s => String(s ?? '')
-        .replace(/^\s*[-•\d.)]+\s*/,'') // tira bullets/numeração comuns
-        .replace(/\s+/g,' ')
-        .trim();
-      val = valRaw.map(clean).filter(Boolean).join('\n');
-    } else {
-      val = valRaw;
-    }
+  // arrays → 1 item por linha (ex.: recipeIngredient)
+  let val;
+  if (Array.isArray(valRaw)) {
+    const clean = s => String(s ?? '')
+      .replace(/^\s*[-•\d.)]+\s*/,'') // remove bullets/numeração comuns
+      .replace(/\s+/g,' ')
+      .trim();
+    val = valRaw.map(clean).filter(Boolean).join('\n');
+  } else {
+    val = valRaw;
+  }
 
-    const ok = setFieldByName(m.name, val, m.type, m.token || null);
-    if (ok) applied.push(m);
-    else    missingDom.push({ m, val });
-  });
+  const ok = setFieldByName(m.name, val, m.type, m.token || null);
+  if (ok) applied.push(m);
+  else    missingDom.push({ m, val });
+});
 
     // 4) Fallbacks/defaults específicos por tipo (não geram "faltando no JSON")
 
