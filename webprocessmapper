@@ -1,0 +1,424 @@
+(() => {
+  'use strict';
+
+  // ===== Config / Keys =====
+  const APP_ID = 'fi-panel';
+  const LS_KEY = 'fi_log_v1';
+  const Z = 2147483000; // alto pra ficar acima do Drupal admin
+
+  // ===== Cleanup se já existir =====
+  document.getElementById(APP_ID)?.remove();
+  document.getElementById(APP_ID+'-style')?.remove();
+  document.getElementById(APP_ID+'-hover')?.remove();
+
+  // ===== State =====
+  let log = [];
+  try { log = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch(e){}
+  let picking = false;
+  let hoverBox;
+  let frameUnsubs = []; // listeners dentro de iframes CKE4
+
+  // ===== Helpers =====
+  const $  = (sel, ctx=document) => ctx.querySelector(sel);
+  const $$ = (sel, ctx=document) => Array.from(ctx.querySelectorAll(sel));
+  const isInPanel = el => !!el.closest('#'+APP_ID);
+  const uid = () => Math.random().toString(36).slice(2)+Date.now().toString(36);
+  const saveLS = () => localStorage.setItem(LS_KEY, JSON.stringify(log));
+
+  const formatCSSSelector = (el) => {
+    if (!el) return null;
+    if (el.id) return `#${CSS.escape(el.id)}`;
+    if (el.getAttribute?.('data-drupal-selector')) {
+      return `[data-drupal-selector="${el.getAttribute('data-drupal-selector')}"]`;
+    }
+    if (el.name) return `${el.tagName.toLowerCase()}[name="${el.name}"]`;
+    // fallback: path com nth-of-type
+    const path = [];
+    let cur = el;
+    while (cur && cur.nodeType === 1 && path.length < 6 && cur !== document.body) {
+      const name = cur.tagName.toLowerCase();
+      const idx = Array.from(cur.parentNode?.children || []).filter(n => n.tagName === cur.tagName).indexOf(cur) + 1;
+      path.unshift(`${name}:nth-of-type(${idx})`);
+      cur = cur.parentElement;
+    }
+    return path.length ? path.join(' > ') : null;
+  };
+
+  const getLabelFor = (inputEl) => {
+    if (!inputEl) return null;
+    const byFor = inputEl.id ? document.querySelector(`label[for="${CSS.escape(inputEl.id)}"]`) : null;
+    if (byFor?.textContent?.trim()) return byFor.textContent.trim();
+    const wrap = inputEl.closest('.form-item, .js-text-format-wrapper, .form-wrapper, .field--widget, .paragraphs-subform, [data-drupal-selector]');
+    const legend = wrap?.querySelector('legend, .fieldset__label, .field__label, label');
+    if (legend?.textContent?.trim()) return legend.textContent.trim();
+    return null;
+  };
+
+  // Aceita sourceFrameEl quando o clique vier de um iframe do CKE4
+  const findNearestFieldElement = (clicked, sourceFrameEl) => {
+    if (sourceFrameEl) {
+      let candidate =
+        sourceFrameEl.closest('.cke, .cke_chrome')?.parentElement?.querySelector('textarea[name], input[name], select[name]') ||
+        sourceFrameEl.closest('.cke, .cke_chrome')?.previousElementSibling;
+      if (!(candidate && candidate.matches?.('textarea[name], input[name], select[name]'))) candidate = null;
+      return { inputEl: candidate || null, editorKind: 'ckeditor', editorWrap: sourceFrameEl.closest('.cke, .ck, .ck-editor') || null };
+    }
+
+    let el = clicked.closest?.('textarea, input, select');
+    if (el) return { inputEl: el, editorKind: null, editorWrap: null };
+
+    const editorWrap = clicked.closest?.('.ck-editor, .ck, .cke, .cke_chrome, .cke_wysiwyg_frame, .ck-content, [contenteditable="true"]');
+    if (editorWrap) {
+      const textWrap = editorWrap.closest('.js-text-format-wrapper') || editorWrap.parentElement;
+      let candidate = textWrap?.querySelector?.('textarea[name], input[name], select[name]');
+      if (!candidate) {
+        let cursor = editorWrap;
+        for (let i=0;i<5 && !candidate && cursor;i++){
+          candidate = cursor.previousElementSibling?.matches?.('textarea[name], input[name], select[name]') ? cursor.previousElementSibling : null;
+          if (!candidate) candidate = cursor.parentElement?.querySelector?.('textarea[name], input[name], select[name]');
+          cursor = cursor.parentElement;
+        }
+      }
+      return { inputEl: candidate || null, editorKind: 'ckeditor', editorWrap };
+    }
+
+    const wrap = clicked.closest?.('.form-item, .js-text-format-wrapper, .form-wrapper, .field--widget, .paragraphs-subform, [data-drupal-selector], form');
+    const any = wrap?.querySelector?.('textarea[name], input[name], select[name]') || null;
+    return { inputEl: any, editorKind: null, editorWrap: null };
+  };
+
+  const parseDrupalNameChain = (nameStr) => {
+    if (!nameStr) return null;
+    const tokens = nameStr.replace(/\]/g,'').split('[');
+    const obj = { tokens };
+    const compIdx = tokens.findIndex(t => /^\d+$/.test(t));
+    if (compIdx > -1) obj.firstIndex = Number(tokens[compIdx]);
+    const subIdx = tokens.indexOf('subform');
+    if (subIdx > -1 && tokens[subIdx+1]) obj.subfield = tokens[subIdx+1];
+    if (subIdx > -1 && tokens[subIdx+2] && /^\d+$/.test(tokens[subIdx+2])) obj.subfieldIndex = Number(tokens[subIdx+2]);
+    if (subIdx > -1 && tokens[subIdx+3]) obj.property = tokens[subIdx+3];
+    obj.component = tokens[0];
+    return obj;
+  };
+
+  const getParagraphIndexFromSelector = (sel) => {
+    if (!sel) return null;
+    const m = sel.match(/-components-(\d+)-subform/i) || sel.match(/components\[(\d+)\]/i);
+    return m ? Number(m[1]) : null;
+  };
+
+  const buildEntryFromClick = (clicked, sourceFrameEl=null) => {
+    const { inputEl, editorKind, editorWrap } = findNearestFieldElement(clicked, sourceFrameEl);
+    if (!inputEl) return null;
+
+    const label = getLabelFor(inputEl);
+    const name  = inputEl.name || null;
+    const id    = inputEl.id || null;
+    const dsel  = inputEl.getAttribute('data-drupal-selector') || inputEl.closest('[data-drupal-selector]')?.getAttribute('data-drupal-selector') || null;
+    const type  = inputEl.tagName.toLowerCase() + (inputEl.type ? `:${inputEl.type}` : '');
+    const cssSel= formatCSSSelector(inputEl);
+    const wrapSel = formatCSSSelector(inputEl.closest('.form-item, .js-text-format-wrapper, .form-wrapper, .field--widget, .paragraphs-subform, [data-drupal-selector]'));
+    const nameChain = parseDrupalNameChain(name);
+    const pIndexHint = getParagraphIndexFromSelector(dsel || wrapSel || '');
+
+    return {
+      id: uid(),
+      ts: new Date().toISOString(),
+      url: location.href,
+      title: document.title,
+      field: {
+        label,
+        type,
+        name,
+        id,
+        dataDrupalSelector: dsel,
+        cssSelector: cssSel,
+        wrapperSelector: wrapSel,
+        editor: editorKind || null
+      },
+      drupal: {
+        component: nameChain?.component || null,
+        componentIndex: nameChain?.firstIndex ?? pIndexHint ?? null,
+        subfield: nameChain?.subfield || null,
+        subfieldIndex: nameChain?.subfieldIndex ?? null,
+        property: nameChain?.property || null,
+        nameTokens: nameChain?.tokens || null
+      },
+      note: ''
+    };
+  };
+
+  const download = (filename, text, type='application/json') => {
+    const blob = new Blob([text], {type});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  // ===== UI =====
+  const style = document.createElement('style');
+  style.id = APP_ID+'-style';
+  style.textContent = `
+#${APP_ID}{position:fixed;top:80px;right:24px;width:340px;max-height:80vh;display:flex;flex-direction:column;background:#1b1b1f;color:#eee;border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.55);font:13px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;z-index:${Z};}
+#${APP_ID} header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #2a2a2e}
+#${APP_ID} header h3{margin:0;font-size:13px;font-weight:600;letter-spacing:.3px;opacity:.9}
+#${APP_ID} header .btns{display:flex;gap:6px;flex-wrap:wrap}
+#${APP_ID} button{background:#2b2b31;border:1px solid #3a3a41;color:#eee;padding:5px 8px;border-radius:8px;cursor:pointer}
+#${APP_ID} button:hover{background:#34343b}
+#${APP_ID} button.primary{background:#3a4fff;border-color:#3a4fff;color:#fff}
+#${APP_ID} button.warn{background:#5b1f1f;border-color:#7a2b2b}
+#${APP_ID} .list{overflow:auto;padding:8px 8px 10px}
+#${APP_ID} .item{border:1px solid #2b2b31;background:#141417;border-radius:10px;padding:8px;margin-bottom:8px}
+#${APP_ID} .item .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#${APP_ID} .item .top .meta{font-size:11px;opacity:.85}
+#${APP_ID} .item .label{font-weight:600;margin:2px 0 6px 0;word-break:break-word}
+#${APP_ID} .item .small{font-size:11px;color:#cfcfd8;opacity:.9;word-break:break-word}
+#${APP_ID} .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+#${APP_ID} .row code{background:#0f0f12;border:1px solid #2b2b31;border-radius:6px;padding:2px 6px;display:inline-block}
+#${APP_ID} .note{width:100%;margin-top:6px;background:#0f0f12;border:1px solid #303038;border-radius:8px;color:#eee;padding:6px}
+#${APP_ID}-hover{position:fixed;border:2px dashed #3a4fff;pointer-events:none;border-radius:6px;z-index:${Z-1};display:none;}
+/* highlight "respiro" (sem scroll) */
+@keyframes fi-breathe{0%{outline:2px solid rgba(58,79,255,.9);box-shadow:0 0 0 0 rgba(58,79,255,.35)}50%{outline-color:rgba(58,79,255,.3);box-shadow:0 0 0 8px rgba(58,79,255,0)}100%{outline-color:transparent;box-shadow:0 0 0 0 rgba(58,79,255,0)}}
+.fi-breathe{animation:fi-breathe 1200ms ease-in-out 2;border-radius:6px}
+  `;
+  document.head.appendChild(style);
+
+  const panel = document.createElement('div');
+  panel.id = APP_ID;
+  panel.innerHTML = `
+    <header>
+      <h3>FIELD IDENTIFICATION</h3>
+      <div class="btns">
+        <button id="${APP_ID}-add"   class="primary" title="Add (selecionar campo)">Add</button>
+        <button id="${APP_ID}-save"  title="Salvar/exportar JSON">Save</button>
+        <button id="${APP_ID}-import" title="Importar JSON">Import</button>
+        <button id="${APP_ID}-clear" class="warn" title="Limpar log">Clear</button>
+        <button id="${APP_ID}-close" title="Fechar painel">×</button>
+      </div>
+    </header>
+    <div class="list" id="${APP_ID}-list"></div>
+    <input id="${APP_ID}-file" type="file" accept="application/json,.json" style="display:none" />
+  `;
+  document.body.appendChild(panel);
+
+  hoverBox = document.createElement('div');
+  hoverBox.id = APP_ID+'-hover';
+  document.body.appendChild(hoverBox);
+
+  const listEl = $('#'+APP_ID+'-list');
+  const fileEl = $('#'+APP_ID+'-file');
+
+  const renderItem = (entry) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'item';
+    wrap.dataset.id = entry.id;
+    wrap.innerHTML = `
+      <div class="top">
+        <div class="meta">${new Date(entry.ts).toLocaleTimeString()} · ${entry.field.editor ? 'CKEditor' : entry.field.type}</div>
+        <div class="row">
+          <button data-act="focus" title="Destacar campo (sem scroll)">Focus</button>
+          <button data-act="copy"  title="Copiar JSON deste item">Copy</button>
+          <button data-act="remove" class="warn" title="Remover">Remove</button>
+        </div>
+      </div>
+      <div class="label">${entry.field.label || '(sem label)'}</div>
+      <div class="small"><b>name:</b> <code>${entry.field.name || '(n/a)'}</code></div>
+      <div class="small"><b>id:</b> <code>${entry.field.id || '(n/a)'}</code></div>
+      <div class="small"><b>data-drupal-selector:</b> <code>${entry.field.dataDrupalSelector || '(n/a)'}</code></div>
+      <div class="row"><div class="small"><b>css:</b> <code>${entry.field.cssSelector || '(n/a)'}</code></div></div>
+      <div class="row"><div class="small"><b>wrapper:</b> <code>${entry.field.wrapperSelector || '(n/a)'}</code></div></div>
+      <div class="row">
+        <div class="small"><b>component:</b> <code>${entry.drupal.component ?? '(n/a)'}</code></div>
+        <div class="small"><b>index:</b> <code>${entry.drupal.componentIndex ?? '(n/a)'}</code></div>
+        <div class="small"><b>subfield:</b> <code>${entry.drupal.subfield ?? '(n/a)'}</code></div>
+        <div class="small"><b>subIndex:</b> <code>${entry.drupal.subfieldIndex ?? '(n/a)'}</code></div>
+        <div class="small"><b>prop:</b> <code>${entry.drupal.property ?? '(n/a)'}</code></div>
+      </div>
+      <textarea class="note" placeholder="Nota (editável)">${entry.note || ''}</textarea>
+    `;
+
+    // ações
+    wrap.addEventListener('click', (ev) => {
+      const act = ev.target?.dataset?.act;
+      if (!act) return;
+      if (act === 'remove') {
+        log = log.filter(it => it.id !== entry.id);
+        saveLS(); renderList();
+      }
+      if (act === 'copy') {
+        navigator.clipboard?.writeText(JSON.stringify(entry, null, 2));
+      }
+      if (act === 'focus') {
+        const candidates = [
+          entry.field.cssSelector,
+          entry.field.wrapperSelector,
+          entry.field.dataDrupalSelector ? `[data-drupal-selector="${entry.field.dataDrupalSelector}"]` : null
+        ].filter(Boolean);
+
+        let el = null;
+        for (const sel of candidates) {
+          try { el = document.querySelector(sel); } catch(_) { el = null; }
+          if (el) break;
+        }
+        if (el) {
+          // highlight "respiro" sem deslocar a tela
+          el.classList.remove('fi-breathe'); // reset se ainda estiver ativo
+          void el.offsetWidth;               // reflow pra reiniciar animação
+          el.classList.add('fi-breathe');
+          setTimeout(()=>el.classList.remove('fi-breathe'), 2500);
+        } else {
+          alert('Não consegui localizar o elemento para destacar.');
+        }
+      }
+    });
+
+    wrap.querySelector('.note').addEventListener('input', (e) => {
+      entry.note = e.target.value;
+      saveLS();
+    });
+
+    return wrap;
+  };
+
+  const renderList = () => {
+    listEl.innerHTML = '';
+    if (!log.length) {
+      listEl.innerHTML = `<div style="opacity:.7;padding:12px">Nenhum item ainda. Clique <b>Add</b> e depois clique em um campo para registrar.</div>`;
+      return;
+    }
+    log.forEach(entry => listEl.appendChild(renderItem(entry)));
+  };
+
+  renderList();
+
+  // ===== Picking mode =====
+  const setHover = (el, frameEl) => {
+    if (!el) { hoverBox.style.display='none'; return; }
+    const r = el.getBoundingClientRect();
+    let left=r.left, top=r.top, width=r.width, height=r.height;
+    if (frameEl) {
+      const fr = frameEl.getBoundingClientRect();
+      left += fr.left; top += fr.top;
+    }
+    hoverBox.style.display='block';
+    hoverBox.style.left = left + 'px';
+    hoverBox.style.top = top + 'px';
+    hoverBox.style.width = width + 'px';
+    hoverBox.style.height = height + 'px';
+  };
+
+  const onMouseMove = (e) => {
+    if (!picking) return;
+    if (isInPanel(e.target)) return setHover(null);
+    const { inputEl, editorWrap } = findNearestFieldElement(e.target);
+    setHover((inputEl || editorWrap || e.target));
+  };
+
+  const onClickPick = (e) => {
+    if (!picking) return;
+    if (isInPanel(e.target)) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const entry = buildEntryFromClick(e.target);
+    if (entry) {
+      log.push(entry); saveLS(); renderList();
+    } else {
+      alert('Não consegui identificar um campo. Clique dentro do conteúdo do campo.');
+    }
+    stopPicking();
+  };
+
+  // iframes CKE4 (opcional, não interfere se não houver)
+  const attachFramePicking = () => {
+    frameUnsubs.forEach(fn=>{try{fn()}catch{}}); frameUnsubs = [];
+    const frames = $$('iframe.cke_wysiwyg_frame, .cke_wysiwyg_frame iframe, iframe[title="Rich Text Area"]');
+    frames.forEach(iframe => {
+      try {
+        const d = iframe.contentDocument; if (!d) return;
+        const move = (ev) => { if (!picking) return; setHover(ev.target, iframe); };
+        const down = (ev) => {
+          if (!picking) return;
+          ev.preventDefault(); ev.stopPropagation();
+          const entry = buildEntryFromClick(ev.target, iframe);
+          if (entry) { log.push(entry); saveLS(); renderList(); }
+          else alert('Não consegui identificar um campo (iframe).');
+          stopPicking();
+        };
+        d.addEventListener('mousemove', move, true);
+        d.addEventListener('mousedown', down, true);
+        frameUnsubs.push(() => { d.removeEventListener('mousemove', move, true); d.removeEventListener('mousedown', down, true); });
+      } catch(_) { /* cross-origin? ignora */ }
+    });
+  };
+
+  const stopPicking = () => {
+    picking = false;
+    hoverBox.style.display='none';
+    document.removeEventListener('mousemove', onMouseMove, true);
+    document.removeEventListener('click', onClickPick, true);
+    frameUnsubs.forEach(fn=>{try{fn()}catch{}}); frameUnsubs = [];
+  };
+
+  // ===== Buttons =====
+  $('#'+APP_ID+'-add').addEventListener('click', () => {
+    picking = true;
+    document.addEventListener('mousemove', onMouseMove, true);
+    document.addEventListener('click', onClickPick, true);
+    attachFramePicking();
+  });
+
+  $('#'+APP_ID+'-save').addEventListener('click', () => {
+    const fname = `field-identification-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
+    download(fname, JSON.stringify({ createdAt:new Date().toISOString(), url:location.href, items:log }, null, 2));
+    console.log('FIELD IDENTIFICATION LOG:', log);
+  });
+
+  // ==== IMPORT ====
+  $('#'+APP_ID+'-import').addEventListener('click', () => fileEl.click());
+  fileEl.addEventListener('change', async () => {
+    const f = fileEl.files?.[0];
+    if (!f) return;
+    try {
+      const text = await f.text();
+      const data = JSON.parse(text);
+      const items = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
+      if (!items.length) { alert('JSON sem itens reconhecíveis. Esperado { items: [...] } ou um array.'); return; }
+      // normaliza id/ts quando ausentes e anexa
+      for (const it of items) {
+        if (!it.id) it.id = uid();
+        if (!it.ts) it.ts = new Date().toISOString();
+      }
+      log = log.concat(items);
+      saveLS(); renderList();
+      fileEl.value = '';
+    } catch (err) {
+      alert('Falha ao importar JSON: ' + (err?.message || err));
+    }
+  });
+
+  $('#'+APP_ID+'-clear').addEventListener('click', () => {
+    if (!confirm('Limpar o log salvo?')) return;
+    log = []; saveLS(); renderList();
+  });
+
+  $('#'+APP_ID+'-close').addEventListener('click', () => {
+    stopPicking();
+    panel.remove(); style.remove(); hoverBox.remove();
+  });
+
+  // ===== Shortcuts =====
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && picking) stopPicking();
+  }, true);
+
+  // ===== Inicial =====
+  const listElInit = $('#'+APP_ID+'-list');
+  hoverBox = document.createElement('div');
+  hoverBox.id = APP_ID+'-hover';
+  document.body.appendChild(hoverBox);
+  renderList();
+})();
