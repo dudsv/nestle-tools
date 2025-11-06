@@ -1,0 +1,382 @@
+javascript: ( () => {
+    const ID = 'nppe-text-checker';
+    if (document.getElementById(ID)) {
+        document.getElementById(ID).remove()
+    }
+    const css = `#${ID}{all:initial;position:fixed;inset:auto 16px 16px auto;z-index:2147483647;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;background:#0b0b10;color:#eaeaf0;border:1px solid #2b2b35;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.35);width:520px;overflow:hidden}
+#${ID} *{all:unset;display:revert}
+#${ID} .bar{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #1f1f27;background:linear-gradient(180deg,rgba(127,34,254,.15),transparent)}
+#${ID} .dot{width:10px;height:10px;border-radius:999px;background:#7F22FE;box-shadow:0 0 14px #7F22FE}
+#${ID} .title{font-weight:600}
+#${ID} .grow{flex:1}
+#${ID} button{cursor:pointer;font-size:12px;padding:6px 10px;border-radius:10px;background:#171722;border:1px solid #2b2b35}
+#${ID} button:hover{border-color:#7F22FE;box-shadow:0 0 0 3px rgba(127,34,254,.15)}
+#${ID} .primary{background:#7F22FE;border-color:#7F22FE;color:#fff}
+#${ID} .wrap{padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+#${ID} label{font-size:12px;opacity:.9}
+#${ID} textarea{font-family:ui-monospace,Consolas,monospace;background:#0f0f16;border:1px solid #2b2b35;border-radius:12px;min-height:160px;max-height:40vh;padding:10px;line-height:1.35}
+#${ID} input[type="text"]{background:#0f0f16;border:1px solid #2b2b35;border-radius:10px;padding:8px}
+#${ID} .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#${ID} .switch{display:inline-flex;gap:6px;align-items:center;font-size:12px;opacity:.9}
+#${ID} .switch input{width:16px;height:16px}
+#${ID} .res{max-height:32vh;overflow:auto;border:1px dashed #2b2b35;border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:8px;background:#0f0f16}
+#${ID} .item{display:flex;gap:8px;align-items:flex-start;font-size:12px}
+#${ID} .ok{color:#73e2a7}
+#${ID} .no{color:#ff8a80}
+#${ID} .muted{opacity:.7}
+#${ID} .tag{border:1px solid #2b2b35;border-radius:999px;padding:2px 8px;font-size:11px}
+#${ID} .tag.bad{border-color:#ff8a80;color:#ffb3ab}
+#${ID} .tag.warn{border-color:#ffd166;color:#ffd166}
+#${ID} .details{display:none;margin-left:22px;border-left:2px solid #2b2b35;padding:8px 0 8px 10px}
+#${ID} .details .k{opacity:.85}
+mark.nppe-hit{background:rgba(127,34,254,.25);outline:2px solid rgba(127,34,254,.6);border-radius:4px;padding:0 2px}`
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.documentElement.appendChild(style);
+    const box = document.createElement('div');
+    box.id = ID;
+    box.innerHTML = `
+  <div class="bar" data-drag="1">
+    <div class="dot"></div><div class="title">Text Checker</div><div class="grow"></div>
+    <button id="tc-min" title="Minimizar">–</button>
+    <button id="tc-close" title="Fechar">×</button>
+  </div>
+  <div class="wrap">
+    <div class="row">
+      <label class="muted">Seletor (área alvo, opcional)</label>
+      <input id="tc-sel" type="text" placeholder="ex.: main, article, [data-el='content']"/>
+    </div>
+    <label>Texto para verificar (cole aqui):</label>
+    <textarea id="tc-inp" placeholder="Cole o conteúdo..."></textarea>
+    <div class="row">
+      <label class="switch"><input id="tc-bypara" type="checkbox"/> Quebrar por parágrafo</label>
+      <label class="switch"><input id="tc-nodiac" type="checkbox"/> Ignorar acentos</label>
+      <label class="switch"><input id="tc-punct" type="checkbox" checked/> Ignorar pontuação/esp.</label>
+      <label class="switch"><input id="tc-high" type="checkbox" checked/> Destacar no site</label>
+    </div>
+    <div class="row">
+      <label class="switch"><input id="tc-tabs" type="checkbox" checked/> Buscar em abas/ocultos</label>
+      <label class="switch"><input id="tc-diag" type="checkbox" checked/> Diagnóstico detalhado</label>
+      <button id="tc-run" class="primary">Verificar</button>
+      <button id="tc-clear">Limpar</button>
+      <div class="grow"></div>
+      <span id="tc-stats" class="muted">—</span>
+    </div>
+    <div id="tc-res" class="res"></div>
+  </div>`;
+    document.body.appendChild(box);
+    // drag
+    ( () => {
+        let dx = 0
+          , dy = 0
+          , drag = false
+          , ox = 0
+          , oy = 0;
+        const bar = box.querySelector('.bar');
+        bar.addEventListener('mousedown', e => {
+            if (!e.target.dataset.drag)
+                return;
+            drag = true;
+            ox = e.clientX;
+            oy = e.clientY;
+            const r = box.getBoundingClientRect();
+            dx = ox - r.left;
+            dy = oy - r.top;
+            e.preventDefault()
+        }
+        );
+        document.addEventListener('mousemove', e => {
+            if (!drag)
+                return;
+            box.style.top = (e.clientY - dy) + 'px';
+            box.style.left = (e.clientX - dx) + 'px';
+            box.style.right = 'auto';
+            box.style.bottom = 'auto'
+        }
+        );
+        document.addEventListener('mouseup', () => drag = false)
+    }
+    )();
+    const $$ = sel => box.querySelector(sel);
+    const normalize = (s, {noDiacritics=false, ignorePunct=true}={}) => {
+        if (!s)
+            return '';
+        s = String(s).replace(/\u00A0/g, ' ');
+        s = s.replace(/[\u2018\u2019\u2032\u00B4]/g, "'").replace(/[\u201C\u201D\u2033]/g, '"');
+        s = s.replace(/[\u2013\u2014\u2212]/g, '-');
+        s = s.replace(/[ \t\r\f\v]+/g, ' ');
+        if (ignorePunct) {
+            s = s.replace(/[.,;:!?(){}\[\]«»"“”'´`•·]/g, '');
+            s = s.replace(/\s+-\s+/g, ' ')
+        }
+        s = s.trim();
+        if (noDiacritics) {
+            try {
+                s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            } catch {}
+        }
+        return s.toLowerCase()
+    }
+    const tokenize = (s, opts) => normalize(s, opts).split(/[^a-z0-9%]+/i).filter(t => t && t.length >= 2)
+    const isNumberTok = t => /^\d+(?:[.,]\d+)?%?$/.test(t)
+    const clearMarks = () => {
+        document.querySelectorAll('mark.nppe-hit').forEach(m => {
+            const p = m.parentNode;
+            p.replaceChild(document.createTextNode(m.textContent), m);
+            p.normalize && p.normalize()
+        }
+        )
+    }
+    const getScope = () => {
+        const sel = $$('#tc-sel').value.trim();
+        if (sel) {
+            try {
+                const el = document.querySelector(sel);
+                if (el)
+                    return el
+            } catch {}
+        }
+        return document.body
+    }
+    const highlightFirst = (needle) => {
+        const scope = getScope();
+        const w = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, null, false);
+        let node;
+        needle = needle.trim();
+        if (!needle || needle.length < 4)
+            return false;
+        const nNorm = normalize(needle, {
+            noDiacritics: $('#tc-nodiac').checked,
+            ignorePunct: $('#tc-punct').checked
+        });
+        while (node = w.nextNode()) {
+            const tNorm = normalize(node.nodeValue, {
+                noDiacritics: $('#tc-nodiac').checked,
+                ignorePunct: $('#tc-punct').checked
+            });
+            if (tNorm.indexOf(nNorm) > -1) {
+                if (!(window.find && window.find(needle, false, false, true, false, false, false))) {
+                    const range = document.createRange();
+                    range.selectNodeContents(node);
+                    const mark = document.createElement('mark');
+                    mark.className = 'nppe-hit';
+                    mark.textContent = needle;
+                    const pos = Math.min(needle.length, node.length);
+                    range.setStart(node, 0);
+                    range.setEnd(node, pos);
+                    range.deleteContents();
+                    range.insertNode(mark)
+                }
+                return true
+            }
+        }
+        return false
+    }
+    const collectHaystack = async () => {
+        const root = getScope();
+        const opts = {
+            noDiacritics: $('#tc-nodiac').checked,
+            ignorePunct: $('#tc-punct').checked
+        };
+        let rawVisible = (root.innerText || root.textContent || '');
+        let extraHidden = '';
+        if ($('#tc-tabs').checked) {
+            const hiddenSelectors = ['[role="tabpanel"]', '.tab-panel', '.tab-pane', '.tabs-panel', '.tabs__panel', '.accordion__panel', '.accordion-panel', '[data-component="tabs"] [id*="panel"]', '[data-el*="tab"] [role="tabpanel"]'];
+            const seen = new Set();
+            hiddenSelectors.forEach(sel => {
+                document.querySelectorAll(sel).forEach(el => {
+                    if (!el || seen.has(el))
+                        return;
+                    seen.add(el);
+                    const txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (txt.length > 10)
+                        extraHidden += ' \n ' + txt
+                }
+                )
+            }
+            );
+            const tabs = [...document.querySelectorAll('[role="tab"]')];
+            if (tabs.length) {
+                const activeTab = tabs.find(t => t.getAttribute('aria-selected') === 'true') || null;
+                for (const t of tabs) {
+                    try {
+                        t.click();
+                        await new Promise(r => setTimeout(r, 220));
+                        rawVisible += ' \n ' + (root.innerText || '')
+                    } catch {}
+                }
+                if (activeTab) {
+                    try {
+                        activeTab.click()
+                    } catch {}
+                }
+            }
+        }
+        const hayRaw = rawVisible + '\n' + extraHidden;
+        return {
+            hayRaw,
+            hayNorm: normalize(hayRaw, opts)
+        }
+    }
+    const splitItems = (raw, byPara) => {
+        const uni = raw.replace(/\r\n/g, '\n');
+        return byPara ? uni.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean) : uni.split(/\n/).map(s => s.trim()).filter(Boolean)
+    }
+    const diagCompare = (item, hayNorm, opts) => {
+        const itoks = tokenize(item, opts);
+        const present = []
+          , missing = []
+          , presentNums = []
+          , missingNums = [];
+        itoks.forEach(t => {
+            const isNum = isNumberTok(t);
+            if (hayNorm.indexOf(t) > -1) {
+                (isNum ? presentNums : present).push(t)
+            } else {
+                (isNum ? missingNums : missing).push(t)
+            }
+        }
+        );
+        const uni = new Set(itoks);
+        const interCount = new Set(present).size + new Set(presentNums).size;
+        const jacc = uni.size ? (interCount / uni.size) : 0;
+        return {
+            present,
+            missing,
+            presentNums,
+            missingNums,
+            jacc
+        }
+    }
+    const buildExpected = (item, diag) => {
+        let out = item;
+        const allMissing = [...diag.missing, ...diag.missingNums];
+        allMissing.forEach(t => {
+            try {
+                const rx = new RegExp('(\\b|\\s)' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\b|\\s)','ig');
+                out = out.replace(rx, ' ')
+            } catch {}
+        }
+        );
+        return out.replace(/\s{2,}/g, ' ').replace(/\s+([.,;:!?])/g, '$1').trim()
+    }
+    const run = async () => {
+        const target = getScope();
+        if (!target) {
+            alert('Seletor não encontrado.');
+            return
+        }
+        const source = $$('#tc-inp').value;
+        if (!source.trim()) {
+            alert('Cole o texto para verificar.');
+            return
+        }
+        const items = splitItems(source, $$('#tc-bypara').checked);
+        const res = $$('#tc-res');
+        res.innerHTML = '';
+        const {hayRaw, hayNorm} = await collectHaystack();
+        const opts = {
+            noDiacritics: $('#tc-nodiac').checked,
+            ignorePunct: $('#tc-punct').checked
+        };
+        let okCount = 0;
+        for (const it of items) {
+            const n = normalize(it, opts);
+            const ok = n.length > 0 && hayNorm.indexOf(n) > -1;
+            if (ok)
+                okCount++;
+            const row = document.createElement('div');
+            row.className = 'item';
+            const badge = document.createElement('span');
+            badge.textContent = ok ? '✅' : '❌';
+            badge.className = ok ? 'ok' : 'no';
+            const text = document.createElement('div');
+            text.style.whiteSpace = 'pre-wrap';
+            text.textContent = it.length > 160 ? it.slice(0, 160) + '…' : it;
+            const btnSee = document.createElement('button');
+            btnSee.textContent = 'ver';
+            btnSee.addEventListener('click', () => {
+                if ($('#tc-high').checked) {
+                    highlightFirst(it)
+                }
+                (getScope() || document.body).scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                })
+            }
+            );
+            row.appendChild(badge);
+            row.appendChild(text);
+            row.appendChild(btnSee);
+            res.appendChild(row);
+            // <-- primeiro adiciona
+            if (!ok && $('#tc-diag').checked) {
+                const d = diagCompare(it, hayNorm, opts);
+                const chips = [];
+                if (d.missing.length)
+                    chips.push(['–' + d.missing.length + ' palavra' + (d.missing.length > 1 ? 's' : ''), 'bad']);
+                if (d.missingNums.length)
+                    chips.push(['–' + d.missingNums.length + ' número' + (d.missingNums.length > 1 ? 's' : ''), 'bad']);
+                if (d.missing.length + d.missingNums.length)
+                    chips.push(['+ extra no input', 'warn']);
+                chips.forEach( ([t,cls]) => {
+                    const c = document.createElement('span');
+                    c.className = 'tag ' + cls;
+                    c.textContent = t;
+                    row.appendChild(c)
+                }
+                );
+                const btnDet = document.createElement('button');
+                btnDet.textContent = 'detalhes';
+                row.appendChild(btnDet);
+                const details = document.createElement('div');
+                details.className = 'details';
+                const expected = buildExpected(it, d);
+                const mk = (k, arr) => `<div><span class="k">${k}:</span> ${arr.length ? arr.slice(0, 16).join(' · ') : '<span class="muted">—</span>'}</div>`;
+                details.innerHTML = mk('Faltando', d.missing) + mk('Faltando (números)', d.missingNums) + mk('Presentes', d.present) + mk('Presentes (números)', d.presentNums) + `<div><span class="k">Similaridade:</span> ${(d.jacc * 100).toFixed(0)}%</div>` + `<div><span class="k">Como esperado:</span> <span>${expected || '<span class="muted">—</span>'}</span></div>`;
+                res.appendChild(details);
+                // <-- insere DEPOIS do row
+                btnDet.addEventListener('click', () => {
+                    details.style.display = details.style.display === 'none' ? 'block' : 'none'
+                }
+                )
+            }
+        }
+        $('#tc-stats').textContent = `${okCount}/${items.length} encontrados`;
+        if ($('#tc-high').checked) {
+            let painted = 0;
+            for (const it of items) {
+                if (painted >= 5)
+                    break;
+                if (highlightFirst(it))
+                    painted++
+            }
+        }
+    }
+    $('#tc-run').addEventListener('click', run);
+    $('#tc-clear').addEventListener('click', () => {
+        clearMarks();
+        $('#tc-res').innerHTML = '';
+        $('#tc-stats').textContent = '—'
+    }
+    );
+    $('#tc-close').addEventListener('click', () => {
+        clearMarks();
+        box.remove();
+        style.remove()
+    }
+    );
+    $('#tc-min').addEventListener('click', () => {
+        const wrap = box.querySelector('.wrap');
+        wrap.style.display = wrap.style.display === 'none' ? '' : 'none'
+    }
+    );
+    const guess = document.querySelector('main, article, [role="main"], [data-el="content"], .content');
+    if (guess) {
+        $('#tc-sel').value = guess.tagName ? guess.tagName.toLowerCase() : 'main'
+    }
+    function $(q) {
+        return box.querySelector(q)
+    }
+}
+)();
