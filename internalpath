@@ -1,11 +1,17 @@
 (() => {
-  const ID = "cp-h1-collector-v12";
+  const ID = "cp-h1-collector-v14";
   if (document.getElementById(ID)) { document.getElementById(ID).remove(); }
 
   // tiny dom helpers
-  const el = (t, a={}, c=[]) => { const n=document.createElement(t);
-    for (const [k,v] of Object.entries(a)) k==="style"?Object.assign(n.style,v):k==="html"?n.innerHTML=v:n.setAttribute(k,v);
-    c.forEach(x=>n.appendChild(x)); return n;
+  const el = (t, a = {}, c = []) => {
+    const n = document.createElement(t);
+    for (const [k, v] of Object.entries(a)) {
+      if (k === "style") Object.assign(n.style, v);
+      else if (k === "html") n.innerHTML = v;
+      else n.setAttribute(k, v);
+    }
+    c.forEach(x => n.appendChild(x));
+    return n;
   };
 
   // styles
@@ -22,72 +28,80 @@
     #${ID} .btns{display:flex;gap:8px;flex-wrap:wrap}
     #${ID} button{padding:8px 12px;border:1px solid #2a2a2a;background:#1b1b1b;color:#f2f2f2;border-radius:10px;cursor:pointer}
     #${ID} button.primary{background:#7F22FE;border-color:#6a1fe0}
+    #${ID} button.small{font-size:11px;padding:4px 8px}
     #${ID} button:disabled{opacity:.5;cursor:not-allowed}
     #${ID} .muted{color:#aaa}
-    #${ID} .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
+    #${ID} .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
     #${ID} .out{min-height:120px}
     #${ID} .small{font-size:12px}
-    #${ID} .status{display:flex;gap:8px;align-items:center;color:#bdbdbd}
+    #${ID} .status{display:flex;gap:8px;align-items:center;color:#bdbdbd;margin-top:2px}
     #${ID} .chip{padding:2px 8px;border:1px solid #2a2a2a;background:#151515;border-radius:999px}
   `;
-  const style = el("style", { id: ID+"-css", html: css });
+  const style = el("style", { id: ID + "-css", html: css });
   document.head.appendChild(style);
 
   // UI
   const root = el("div", { id: ID });
   const box = el("div", { class: "box" });
+
   const header = el("header", {}, [
-    el("h3", { html: "CurrentPath & H1 Collector v1.2" }),
+    el("h3", { html: "CurrentPath & H1 Collector v1.4" }),
     el("div", {}, [
-      el("button", { class: "small", title:"Minimize", id: ID+"-min" }),
-      el("button", { style:{marginLeft:"6px"}, title:"Close", id: ID+"-close"})
+      el("button", { class: "small", title: "Minimize", id: ID + "-min", html: "—" }),
+      el("button", { class: "small", style: { marginLeft: "6px" }, title: "Close", id: ID + "-close", html: "✕" })
     ])
   ]);
-  const btnMin = header.querySelector("#"+ID+"-min"); btnMin.textContent = "—";
-  const btnClose = header.querySelector("#"+ID+"-close"); btnClose.textContent = "✕";
-  btnClose.onclick = () => { root.remove(); style.remove(); };
 
   const body = el("div", { class: "body" });
 
   const singleRow = el("div", {}, [
-    el("label", { for: ID+"-single", html:"Single URL (optional)" }),
-    el("input", { id: ID+"-single", placeholder: "https://site/path" })
+    el("label", { for: ID + "-single", html: "Single URL (optional)" }),
+    el("input", { id: ID + "-single", placeholder: "https://site/path" })
   ]);
+
   const listRow = el("div", {}, [
-    el("label", { for: ID+"-list", html:"List of URLs (one per line)" }),
-    el("textarea", { id: ID+"-list", placeholder: "https://site/a\nhttps://site/b" })
+    el("label", { for: ID + "-list", html: "List of URLs (one per line)" }),
+    el("textarea", { id: ID + "-list", placeholder: "https://site/a\nhttps://site/b" })
   ]);
 
   const row = el("div", { class: "row" }, [
     el("div", {}, [
-      el("label", { html:"If empty, uses current page" }),
-      el("div", { class:"status small muted", style:{marginTop:"6px"} }, [
-        el("span", { class:"chip", html:"Output → TSV/CSV" }),
-        el("span", { class:"chip", html:".XLSX download" }),
-        el("span", { class:"chip", html:"CORS notes on errors" })
+      el("label", { html: "If empty, uses current page" }),
+      el("div", { class: "status small muted", style: { marginTop: "6px" } }, [
+        el("span", { class: "chip", html: "Output → TSV / CSV" }),
+        el("span", { class: "chip", html: ".XLSX (with fallback)" }),
+        el("span", { class: "chip", html: "CORS/Drupal-safe" })
       ])
     ]),
-    el("div", { class:"btns", style:{alignSelf:"end", justifyContent:"end"} }, [
-      el("button", { id: ID+"-run", class:"primary" }, [document.createTextNode("Run")]),
-      el("button", { id: ID+"-clear" }, [document.createTextNode("Clear")]),
-      el("button", { id: ID+"-copy-tsv" }, [document.createTextNode("Copy TSV")]),
-      el("button", { id: ID+"-copy-csv" }, [document.createTextNode("Copy CSV")]),
-      el("button", { id: ID+"-dl-xlsx" }, [document.createTextNode("Download .XLSX")])
+    el("div", { class: "btns", style: { alignSelf: "end", justifyContent: "end" } }, [
+      el("button", { id: ID + "-run", class: "primary" }, [document.createTextNode("Run")]),
+      el("button", { id: ID + "-clear" }, [document.createTextNode("Clear")]),
+      el("button", { id: ID + "-copy-tsv" }, [document.createTextNode("Copy TSV")]),
+      el("button", { id: ID + "-copy-csv" }, [document.createTextNode("Copy CSV")]),
+      el("button", { id: ID + "-dl-xlsx" }, [document.createTextNode("Download .XLSX")])
     ])
   ]);
 
-  const status = el("div", { class:"status" }, [
-    el("span", { id: ID+"-prog", html:"Idle" })
+  const status = el("div", { class: "status" }, [
+    el("span", { id: ID + "-prog", html: "Idle" })
   ]);
 
-  const out = el("textarea", { id: ID+"-out", class:"mono out", placeholder:"Results appear here…" });
+  const out = el("textarea", {
+    id: ID + "-out",
+    class: "mono out",
+    placeholder: "URL\tH1\tCurrent path\n…"
+  });
 
   box.append(header, body);
   body.append(singleRow, listRow, row, status, out);
   root.appendChild(box);
   document.body.appendChild(root);
 
-  // Minimize
+  // Close & Minimize
+  const btnMin = document.getElementById(ID + "-min");
+  const btnClose = document.getElementById(ID + "-close");
+  btnClose.onclick = () => { root.remove(); style.remove(); };
+
   let minimized = false;
   btnMin.onclick = () => {
     minimized = !minimized;
@@ -97,17 +111,16 @@
 
   // Elements
   const $ = (id) => document.getElementById(id);
-  const $single = $(ID+"-single");
-  const $list = $(ID+"-list");
-  const $run = $(ID+"-run");
-  const $clear = $(ID+"-clear");
-  const $copyTsv = $(ID+"-copy-tsv");
-  const $copyCsv = $(ID+"-copy-csv");
-  const $dlXlsx = $(ID+"-dl-xlsx");
-  const $prog = $(ID+"-prog");
-  const $out = $(ID+"-out");
+  const $single = $(ID + "-single");
+  const $list = $(ID + "-list");
+  const $run = $(ID + "-run");
+  const $clear = $(ID + "-clear");
+  const $copyTsv = $(ID + "-copy-tsv");
+  const $copyCsv = $(ID + "-copy-csv");
+  const $dlXlsx = $(ID + "-dl-xlsx");
+  const $prog = $(ID + "-prog");
+  const $out = $(ID + "-out");
 
-  // Cache for exports
   let lastResults = [];
 
   // Helpers
@@ -117,92 +130,165 @@
       if (/^https?:\/\//i.test(u)) return new URL(u).toString();
       if (u.startsWith("/")) return new URL(u, location.origin).toString();
       return new URL("/" + u.replace(/^\.?\//, ""), location.origin).toString();
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   };
+
   const uniq = (a) => [...new Set(a)];
-  const extractFromHTML = (html, url) => {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const h1 = (doc.querySelector("h1")?.textContent || "").replace(/\s+/g," ").trim() || "(no H1)";
-    let currentPath = "(not found)";
+
+  const extractCurrentPath = (doc) => {
     try {
       const sEl = doc.querySelector('script[type="application/json"][data-drupal-selector="drupal-settings-json"]');
-      if (sEl?.textContent) {
-        const s = JSON.parse(sEl.textContent);
-        currentPath = s?.path?.currentPath ?? "(not found)";
-      }
-    } catch { currentPath = "(parse error)"; }
+      if (!sEl?.textContent) return "(not found)";
+      const s = JSON.parse(sEl.textContent);
+      const path =
+        s?.path?.currentPath ||
+        s?.path?.currentPathAlias ||
+        s?.pathCurrent ||
+        s?.pathAlias ||
+        null;
+      return path || "(not found)";
+    } catch {
+      return "(parse error)";
+    }
+  };
+
+  const extractFromHTML = (html, url) => {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const h1 = (doc.querySelector("h1")?.textContent || "")
+      .replace(/\s+/g, " ")
+      .trim() || "(no H1)";
+    const currentPath = extractCurrentPath(doc);
     return { url, h1, currentPath };
   };
+
   const fetchPage = async (url) => {
     try {
-      const res = await fetch(url, { mode:"cors", credentials:"omit" });
+      const res = await fetch(url, { mode: "cors", credentials: "omit" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const html = await res.text();
       return extractFromHTML(html, url);
     } catch (err) {
-      return { url, h1: "(unknown)", currentPath: `(CORS blocked or error: ${err?.message || "fetch error"})` };
+      return {
+        url,
+        h1: "(unknown)",
+        currentPath: `(CORS or fetch error: ${err?.message || "blocked"})`
+      };
     }
   };
+
   const toTSV = (rows) => {
-    const esc = (s) => String(s ?? "").replace(/\t/g," ").replace(/\n/g," ");
-    const lines = [["URL","H1","Current path"], ...rows.map(r => [esc(r.url), esc(r.h1), esc(r.currentPath)])];
+    const esc = (s) => String(s ?? "").replace(/\t/g, " ").replace(/\n/g, " ");
+    const lines = [
+      ["URL", "H1", "Current path"],
+      ...rows.map(r => [esc(r.url), esc(r.h1), esc(r.currentPath)])
+    ];
     return lines.map(cols => cols.join("\t")).join("\n");
   };
+
   const toCSV = (rows) => {
     const esc = (s) => {
       const t = String(s ?? "");
-      return /[",\n]/.test(t) ? `"${t.replace(/"/g,'""')}"` : t;
+      return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
     };
-    const lines = [["URL","H1","Current path"], ...rows.map(r => [esc(r.url), esc(r.h1), esc(r.currentPath)])];
+    const lines = [
+      ["URL", "H1", "Current path"],
+      ...rows.map(r => [esc(r.url), esc(r.h1), esc(r.currentPath)])
+    ];
     return lines.map(cols => cols.join(",")).join("\n");
   };
 
-  // Load SheetJS on demand for .xlsx
+  // Download helpers
+  const downloadBlob = (content, mime, filename) => {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  // SheetJS loader (.xlsx) — may be blocked by CSP
   const ensureXLSX = async () => {
-    if (window.XLSX) return;
-    await new Promise((resolve, reject) => {
+    if (window.XLSX) return true;
+    return await new Promise((resolve) => {
       const s = document.createElement("script");
       s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js";
-      s.onload = resolve;
-      s.onerror = () => reject(new Error("Failed to load XLSX library"));
+      s.onload = () => resolve(true);
+      s.onerror = () => resolve(false); // não quebra, só sinaliza falha
       document.head.appendChild(s);
     });
   };
 
-  const downloadXLSX = async (rows) => {
-    try {
-      $dlXlsx.disabled = true; $prog.textContent = "Preparing .XLSX…";
-      await ensureXLSX();
-      const aoa = [["URL","H1","Current path"], ...rows.map(r => [r.url, r.h1, r.currentPath])];
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Data");
-      const stamp = new Date().toISOString().replace(/[:.]/g,"-");
-      XLSX.writeFile(wb, `currentpath-h1-${stamp}.xlsx`);
-      $prog.textContent = ".XLSX downloaded.";
-    } catch (e) {
-      console.error(e);
-      $prog.textContent = "Failed to create .XLSX (see console).";
-      alert("Could not create .XLSX. Check console for details.");
-    } finally {
-      $dlXlsx.disabled = false;
+  const downloadXLSXorCSV = async (rows) => {
+    if (!rows.length) {
+      $prog.textContent = "No data to export.";
+      return;
     }
+    $dlXlsx.disabled = true;
+    $prog.textContent = "Preparing export…";
+
+    const ok = await ensureXLSX();
+
+    if (ok && window.XLSX) {
+      try {
+        const aoa = [
+          ["URL", "H1", "Current path"],
+          ...rows.map(r => [r.url, r.h1, r.currentPath])
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Data");
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        XLSX.writeFile(wb, `currentpath-h1-${stamp}.xlsx`);
+        $prog.textContent = ".XLSX downloaded.";
+      } catch (e) {
+        console.error(e);
+        // fallback CSV
+        const csv = toCSV(rows);
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        downloadBlob(csv, "text/csv;charset=utf-8;", `currentpath-h1-${stamp}.csv`);
+        $prog.textContent = "CSP/lib issue. CSV downloaded instead.";
+      } finally {
+        $dlXlsx.disabled = false;
+      }
+      return;
+    }
+
+    // CSP bloqueou externo → fallback direto pra CSV
+    const csv = toCSV(rows);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    downloadBlob(csv, "text/csv;charset=utf-8;", `currentpath-h1-${stamp}.csv`);
+    $prog.textContent = "CSP blocked XLSX. CSV downloaded instead.";
+    $dlXlsx.disabled = false;
   };
 
   // Run
   const run = async () => {
-    const raw = [$single.value.trim(), ...$list.value.split(/\r?\n/)].map(s=>s.trim()).filter(Boolean);
+    const raw = [
+      $single.value.trim(),
+      ...$list.value.split(/\r?\n/)
+    ].map(s => s.trim()).filter(Boolean);
+
     let urls = uniq(raw.map(normURL).filter(Boolean));
-    if (urls.length === 0) urls = [location.href];
+    if (!urls.length) urls = [location.href];
 
-    $run.disabled = true; $copyTsv.disabled = true; $copyCsv.disabled = true; $dlXlsx.disabled = true;
-    $prog.textContent = `Running… (0 / ${urls.length})`;
     lastResults = [];
-    let done = 0;
+    $run.disabled = true;
+    $copyTsv.disabled = true;
+    $copyCsv.disabled = true;
+    $dlXlsx.disabled = true;
+    $prog.textContent = `Running… (0 / ${urls.length})`;
+    $out.value = "";
 
+    let done = 0;
     for (const u of urls) {
-      const r = await fetchPage(u);
-      lastResults.push(r);
+      const row = await fetchPage(u);
+      lastResults.push(row);
       done++;
       $prog.textContent = `Running… (${done} / ${urls.length})`;
     }
@@ -210,13 +296,46 @@
     const tsv = toTSV(lastResults);
     $out.value = tsv;
     $prog.textContent = `Done. ${lastResults.length} URL(s) processed.`;
-    $copyTsv.disabled = false; $copyCsv.disabled = false; $dlXlsx.disabled = false; $run.disabled = false;
+    $copyTsv.disabled = !lastResults.length;
+    $copyCsv.disabled = !lastResults.length;
+    $dlXlsx.disabled = !lastResults.length;
+    $run.disabled = false;
   };
 
   // Bindings
-  $(ID+"-run").onclick = run;
-  $clear.onclick = () => { $single.value=""; $list.value=""; $out.value=""; lastResults=[]; $prog.textContent="Idle"; };
-  $copyTsv.onclick = async () => { const tsv = toTSV(lastResults); await navigator.clipboard.writeText(tsv); $prog.textContent="TSV copied."; };
-  $copyCsv.onclick = async () => { const csv = toCSV(lastResults); await navigator.clipboard.writeText(csv); $prog.textContent="CSV copied."; };
-  $dlXlsx.onclick = () => downloadXLSX(lastResults);
+  $run.onclick = run;
+
+  $clear.onclick = () => {
+    $single.value = "";
+    $list.value = "";
+    $out.value = "";
+    lastResults = [];
+    $prog.textContent = "Cleared.";
+  };
+
+  $copyTsv.onclick = async () => {
+    try {
+      const tsv = toTSV(lastResults);
+      await navigator.clipboard.writeText(tsv);
+      $prog.textContent = "TSV copied.";
+    } catch (e) {
+      console.error(e);
+      $prog.textContent = "Clipboard blocked. Copy from results box.";
+      alert("Clipboard permission blocked. Copie direto do box de resultados.");
+    }
+  };
+
+  $copyCsv.onclick = async () => {
+    try {
+      const csv = toCSV(lastResults);
+      await navigator.clipboard.writeText(csv);
+      $prog.textContent = "CSV copied.";
+    } catch (e) {
+      console.error(e);
+      $prog.textContent = "Clipboard blocked. Copy from results box.";
+      alert("Clipboard permission blocked. Copie direto do box de resultados.");
+    }
+  };
+
+  $dlXlsx.onclick = () => downloadXLSXorCSV(lastResults);
 })();
