@@ -1,5 +1,5 @@
 (()=>{'use strict';
-/* ===================== Utils base ===================== */
+// Base utils
 const $=(s,c=document)=>c.querySelector(s);
 const norm=s=>(s??'').toString().trim();
 function setValue(el,val){ if(!el)return false; const tag=el.tagName.toLowerCase(); el.focus();
@@ -9,10 +9,10 @@ function setValue(el,val){ if(!el)return false; const tag=el.tagName.toLowerCase
 function clearValue(el){ return setValue(el,''); }
 function pickEl(selectors){ for(const sel of selectors){ const el=$(sel); if(el) return el; } return null; }
 
-/* ===================== Mapeamentos padrão (Purina + FamilyNes) ===================== */
+// Default mappings (Purina + FamilyNes)
 const DEFAULT_MAPPING={
-/* ===================== Mapeamentos padrão (Purina + FamilyNes + MX) ===================== */
-  // H1 e URL permanecem os mesmos
+// Default mappings (Purina + FamilyNes + MX)
+  // H1 and URL stay the same
   h1:     [
     '#edit-title-0-value',
     '[data-drupal-selector="edit-title-0-value"]'
@@ -22,14 +22,14 @@ const DEFAULT_MAPPING={
     '#edit-path-0-alias'
   ],
 
-  // --- META BASIC (Title/Description) ---
-  // 🇲🇽 México (field_meta_tags[0]…) – PRIORIDADE 1
+  // META BASIC (Title/Description)
+  // 🇲🇽 Mexico (field_meta_tags[0]…) — PRIORITY 1
   title:  [
     '[name="field_meta_tags[0][basic][title]"]',
     '#edit-field-meta-tags-0-basic-title',
     '[data-drupal-selector="edit-field-meta-tags-0-basic-title"]',
 
-    // 🇪🇺 Purina/FamilyNes (ln-n-meta-tags…) – fallback
+    // 🇪🇺 Purina/FamilyNes (ln-n-meta-tags…) — fallback
     '#edit-field-ln-n-meta-tags-0-basic-title',
     '[data-drupal-selector="edit-metatags-basic-title"]'
   ],
@@ -42,7 +42,7 @@ const DEFAULT_MAPPING={
     '[data-drupal-selector="edit-metatags-basic-description"]'
   ],
 
-  // --- OPEN GRAPH (og:title / og:description) ---
+  // OPEN GRAPH (og:title / og:description)
   ogtitle:[
     '[name="field_meta_tags[0][open_graph][og_title]"]',
     '#edit-field-meta-tags-0-open-graph-og-title',
@@ -62,7 +62,7 @@ const DEFAULT_MAPPING={
 };
 
 
-/* ===================== UI ===================== */
+// UI
 const ov=document.createElement('div');
 ov.style.cssText='position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center';
 const bx=document.createElement('div');
@@ -78,7 +78,7 @@ bx.innerHTML=`
     <button id="tab-schema" style="padding:8px 10px;border:1px solid #444;border-radius:8px;background:#222;color:#eee">Schema</button>
   </div>
 
-  <!-- Pane de preenchimento convencional -->
+  <!-- Conventional fill pane -->
   <div id="pane-fill">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div>
@@ -136,7 +136,7 @@ bx.innerHTML=`
     <pre id="ff-out" style="margin-top:12px;background:#0d0d0d;border:1px solid #222;border-radius:10px;padding:10px;white-space:pre-wrap"></pre>
   </div>
 
-  <!-- Pane de Schema (apenas campo + botão aplicar, usando SEU MAP) -->
+  <!-- Schema pane (just field + apply button, using YOUR MAP) -->
   <div id="pane-schema" style="display:none">
     <div style="opacity:.85;margin-bottom:6px"><b>Schema JSON-LD</b> — cole o JSON (puro) ou o bloco &lt;script type="application/ld+json"&gt;…</div>
     <div id="sch-types" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 6px">
@@ -157,7 +157,7 @@ bx.innerHTML=`
 ov.appendChild(bx); document.body.appendChild(ov);
 $('#ff-close').onclick=()=>ov.remove();
 
-/* ===================== Tabs ===================== */
+// Tabs
 function showFill(){ $('#pane-fill').style.display=''; $('#pane-schema').style.display='none';
   $('#tab-fill').style.background='#2a7'; $('#tab-fill').style.color='#111';
   $('#tab-schema').style.background='#222'; $('#tab-schema').style.color='#eee';
@@ -168,7 +168,7 @@ function showSchema(){ $('#pane-fill').style.display='none'; $('#pane-schema').s
 }
 $('#tab-fill').onclick=showFill; $('#tab-schema').onclick=showSchema;
 
-/* ===================== Preenchimento (TSV + Campos) ===================== */
+// Fill (TSV + Fields)
 function parseTSV(text){
   const lines=norm(text).split(/\r?\n/).filter(Boolean);
   if(!lines.length) return {};
@@ -255,13 +255,13 @@ $('#ff-run').onclick=()=>{ const {data,pool}=getPayloadAndMap(); const rep=fillF
 $('#ff-dry').onclick=()=>{ const {data,pool}=getPayloadAndMap(); const rep=fillFields(data,pool,{dryRun:true}); outEl.textContent='[Simulação]\n'+fmtReport(rep); };
 $('#ff-clear').onclick=()=>{ const {pool}=getPayloadAndMap(); const rep=fillFields({},pool,{doClear:true}); outEl.textContent='[Limpeza]\n'+fmtReport(rep); };
 
-/* ===================== Schema (usando seu MAP e setField por name=) ===================== */
+// Schema (using your MAP and setField by name=)
 const SLOG=$('#sch-log');
-// ===================== Schema Name Index (suporta dumps "items") =====================
+// Schema Name Index (supports "items" dumps)
 let SCHEMA_NAME_INDEX = Object.create(null); // token -> { name, css, id }
 
 function normalizeToken(tokens) {
-  // tokens -> ancora em schema_article | schema_product | schema_recipe e retorna o restante como token
+  // tokens -> anchor in schema_article | schema_product | schema_recipe and return the rest as token
   if (!Array.isArray(tokens)) return null;
   let i = tokens.indexOf('schema_article');
   if (i < 0) i = tokens.indexOf('schema_product');
@@ -271,7 +271,7 @@ function normalizeToken(tokens) {
   if (slice.length >= 2) {
     const head = (slice[0] === 'schema_article' || slice[0] === 'schema_product' || slice[0] === 'schema_recipe')
       ? slice.slice(1) : slice;
-    return head.join('.'); // ex.: "schema_recipe_author.@type"
+    return head.join('.'); // e.g., "schema_recipe_author.@type"
   }
   return null;
 }
@@ -300,7 +300,7 @@ function updateSchemaNameIndexFromItems(jsonText) {
   }
 }
 
-// Tenta variantes do mesmo "name" (metatags[...] -> field_meta_tags[0][...])
+// Try name variants (metatags[...] -> field_meta_tags[0][...])
 function guessNameVariant(originalName) {
   if (!originalName) return null;
   // ex: metatags[schema_article][schema_article_type]
@@ -315,7 +315,7 @@ function guessNameVariant(originalName) {
   return parts;
 }
 
-// Busca elemento por: name exato → name variante → CSS de token → id → última tentativa por endsWith
+// Find element by: exact name → name variant → CSS from token → id → fallback endsWith
 function findElByAny({ name, token }) {
   let sel, el;
   if (name) {
@@ -346,7 +346,7 @@ function findElByAny({ name, token }) {
       if (el) return el;
     }
   }
-  // fallback: qualquer input/select cujo name termine com o sufixo do original
+  // fallback: any input/select whose name ends with the original suffix
   if (name) {
     const short = name.replace(/^metatags\[/, '').replace(/\]$/,'');
     const candidates = document.querySelectorAll('input[name],textarea[name],select[name]');
@@ -359,22 +359,20 @@ function findElByAny({ name, token }) {
 
 const slog=(m,cls='')=>{ SLOG.textContent+= (cls?`[${cls}] `:'') + m + '\n'; SLOG.scrollTop=SLOG.scrollHeight; };
 
-// === funções do seu snippet (adaptadas só para usar IDs locais) ===
-const APP_ID='schema-json-fill'; // apenas p/ manter nomes
+// Your snippet functions (adapted only to use local IDs)
+const APP_ID='schema-json-fill'; // just to keep names
 
-// Tipo atual de schema (Article, Products, Recipes)
+// Current schema type (Article, Products, Recipes)
 let CURRENT_SCHEMA_TYPE = 'article';
 
-// ===================== Schema Maps =====================
-
-// (Opcional) Enum de tipos para evitar typos
+// Schema types enum (to avoid typos)
 const SCHEMA_TYPES = {
   ARTICLE:  'article',
   PRODUCTS: 'products',
   RECIPES:  'recipes',
 };
 
-// --- MAP: Article (seu atual, intacto) ---
+// MAP: Article (yours, intact)
 const ARTICLE_MAP = [
   { path:'@type',                  name:'metatags[schema_article][schema_article_type]',                          type:'select', token:'schema_article_type' },
   { path:'mainEntityOfPage.@id',   name:'metatags[schema_article][schema_article_main_entity_of_page]',                                token:'schema_article_main_entity_of_page' },
@@ -388,14 +386,14 @@ const ARTICLE_MAP = [
   { path:'publisher.logo.@type',   name:'metatags[schema_article][schema_article_publisher][logo][@type]',     type:'select',          token:'schema_article_publisher.logo.@type' },
   { path:'publisher.logo.url',     name:'metatags[schema_article][schema_article_publisher][logo][url]',                               token:'schema_article_publisher.logo.url' },
 
-  // opcionais + fallbacks
+  // optional + fallbacks
   { path:'@id',                    name:'metatags[schema_article][schema_article_id]',                                                 token:'schema_article_id' },
   { path:'name',                   name:'metatags[schema_article][schema_article_name]',                                               token:'schema_article_name' },
 ];
 
-// --- MAP: Products (do seu dump) ---
+// MAP: Products (from your dump)
 const PRODUCTS_MAP = [
-  // raiz
+  // root
   { path:'@type',        name:'metatags[schema_product][schema_product_type]',                                   type:'select', token:'schema_product_type' },
   { path:'name',         name:'metatags[schema_product][schema_product_name]',                                                  token:'schema_product_name' },
   { path:'description',  name:'metatags[schema_product][schema_product_description]',                                           token:'schema_product_description' },
@@ -415,27 +413,27 @@ const PRODUCTS_MAP = [
   { path:'aggregateRating.ratingCount', name:'metatags[schema_product][schema_product_aggregate_rating][ratingCount]',        token:'schema_product_aggregate_rating.ratingCount' },
 ];
 
-// --- MAP: Recipes ---
+// MAP: Recipes
 const RECIPES_MAP = [
-  // raiz
+  // root
   { path:'@type',           name:'metatags[schema_recipe][schema_recipe_type]',                 type:'select', token:'schema_recipe_type' },
   { path:'name',            name:'metatags[schema_recipe][schema_recipe_name]',                               token:'schema_recipe_name' },
   { path:'description',     name:'metatags[schema_recipe][schema_recipe_description]',                        token:'schema_recipe_description' },
   { path:'datePublished',   name:'metatags[schema_recipe][schema_recipe_date_published]',                     token:'schema_recipe_date_published' },
 
-  // ingredientes (array no JSON)
+  // ingredients (array in JSON)
   { path:'recipeIngredient', name:'metatags[schema_recipe][schema_recipe_recipe_ingredient]',                 token:'schema_recipe_recipe_ingredient' },
 
-  // autor
+  // author
   { path:'author.@type',    name:'metatags[schema_recipe][schema_recipe_author][@type]',        type:'select', token:'schema_recipe_author.@type' },
   { path:'author.name',     name:'metatags[schema_recipe][schema_recipe_author][name]',                      token:'schema_recipe_author.name' },
 
-  // instruções (string longa)
+  // instructions (long string)
   { path:'recipeInstructions', name:'metatags[schema_recipe][schema_recipe_recipe_instructions]',            token:'schema_recipe_recipe_instructions' },
 ];
 
 
-// Dicionário final dos mapas por tipo
+// Final maps dictionary by type
 const MAPS = {
   [SCHEMA_TYPES.ARTICLE]:  ARTICLE_MAP,
   [SCHEMA_TYPES.PRODUCTS]: PRODUCTS_MAP,
@@ -448,7 +446,7 @@ function sanitizeText(v){ if(typeof v!=='string') return v;
 }
 function getByPath(obj,path){ if(!obj||!path) return undefined; return path.split('.').reduce((acc,key)=>acc&&acc[key],obj); }
 
-// extrai JSON do textarea (aceita script ld+json e CSV com aspas duplas)
+// Extract JSON from textarea (accepts ld+json <script> and CSV with double quotes)
 function extractJsonText(raw){
   let txt=(raw||'').trim().replace(/^\uFEFF/,'');
   if(txt.startsWith('"')&&txt.endsWith('"')){ const inner=txt.slice(1,-1); if((inner.match(/""/g)||[]).length>=1){ txt=inner.replace(/""/g,'"'); slog('Detectei CSV/Excel com aspas — normalizado.','ok'); } }
@@ -465,7 +463,7 @@ function setFieldByName(name, value, kind, token=null){
   const el = findElByAny({ name, token });
   if(!el){ slog(`não encontrei ${name}${token?` (token:${token})`:''}`,'warn'); return false; }
 
-  // Aviso específico para recipeIngredient em input:text
+  // Specific warning for recipeIngredient in input:text
   if (token === 'schema_recipe_recipe_ingredient' && el.tagName === 'INPUT' && typeof value === 'string' && value.includes('\n')) {
     slog('aviso: recipeIngredient está em <input type="text"> — que pode não aceitar múltiplas linhas. Ideal: textarea.', 'warn');
   }
@@ -480,6 +478,61 @@ function setFieldByName(name, value, kind, token=null){
   slog(`ok → ${el.name||name} = ${v}`,'ok');
   return true;
 }
+
+// FamilyNes: token presets + domain guard
+const IS_FAMILYNES = /\.?familynes\./i.test(location.hostname);
+
+// FamilyNes presets for Article + WebPage Publisher (if present)
+const FN_SCHEMA_PRESETS = {
+  article: [
+    // Article
+    ['metatags[schema_article][schema_article_type]', 'Article', 'select', 'schema_article_type'],
+    ['metatags[schema_article][schema_article_id]', '[current-page:url]', null, 'schema_article_id'],
+    ['metatags[schema_article][schema_article_headline]', '[current-page:metatag:title]', null, 'schema_article_headline'],
+    ['metatags[schema_article][schema_article_description]', '[node:field_np_teaser_text]', null, 'schema_article_description'],
+    ['metatags[schema_article][schema_article_date_published]', '[node:created:metatag_datetime]', null, 'schema_article_date_published'],
+    // If your build has "date modified" (many do):
+    ['metatags[schema_article][schema_article_date_modified]', '[node:revision-created:metatag_datetime]', null, 'schema_article_date_modified'],
+    ['metatags[schema_article][schema_article_main_entity_of_page]', '[node:url]', null, 'schema_article_main_entity_of_page'],
+
+    // ImageObject (uses site logo as representative)
+    ['metatags[schema_article][schema_article_image][@type]', 'ImageObject', 'select', 'schema_article_image.@type'],
+    ['metatags[schema_article][schema_article_image][url]', '[cp:site-logo-url]', null, 'schema_article_image.url'],
+
+    // Author = Organization
+    ['metatags[schema_article][schema_article_author][@type]', 'Organization', 'select', 'schema_article_author.@type'],
+    ['metatags[schema_article][schema_article_author][name]', '[site:name]', null, 'schema_article_author.name'],
+    ['metatags[schema_article][schema_article_author][url]',  '[site:url]',  null, 'schema_article_author.url'],
+
+    // Publisher = Organization + Logo
+    ['metatags[schema_article][schema_article_publisher][@type]', 'Organization', 'select', 'schema_article_publisher.@type'],
+    ['metatags[schema_article][schema_article_publisher][name]', '[site:name]', null, 'schema_article_publisher.name'],
+    ['metatags[schema_article][schema_article_publisher][url]',  '[site:url]',  null, 'schema_article_publisher.url'],
+    ['metatags[schema_article][schema_article_publisher][logo][@type]', 'ImageObject', 'select', 'schema_article_publisher.logo.@type'],
+    ['metatags[schema_article][schema_article_publisher][logo][url]', '[cp:site-logo-url]', null, 'schema_article_publisher.logo.url'],
+
+    // (Optional) WebPage Publisher (if present in your build)
+    ['metatags[schema_web_page][schema_web_page_publisher][@type]', 'Organization', 'select', 'schema_web_page_publisher.@type'],
+    ['metatags[schema_web_page][schema_web_page_publisher][name]', '[site:name]', null, 'schema_web_page_publisher.name'],
+    ['metatags[schema_web_page][schema_web_page_publisher][url]',  '[site:url]',  null, 'schema_web_page_publisher.url'],
+    ['metatags[schema_web_page][schema_web_page_publisher][logo][@type]', 'ImageObject', 'select', 'schema_web_page_publisher.logo.@type'],
+    ['metatags[schema_web_page][schema_web_page_publisher][logo][url]', '[cp:site-logo-url]', null, 'schema_web_page_publisher.logo.url'],
+  ],
+};
+
+// Apply FamilyNes tokens only on familynes.xx domain
+function applyFamilyNesTokens({ force = false } = {}) {
+  if (!IS_FAMILYNES) return; // only runs on FamilyNes
+  const rows = FN_SCHEMA_PRESETS.article;
+  rows.forEach(([name, value, kind, token]) => {
+    const el = findElByAny({ name, token });
+    if (!el) { slog?.(`familynes: campo ausente → ${name}`, 'warn'); return; }
+    // by default, fill only if empty; with force=true overwrite
+    if (force || !el.value) setFieldByName(name, value, kind, token);
+  });
+  slog?.('familynes: tokens padrão aplicados.', 'ok');
+}
+// Apply FamilyNes tokens when loading the map
 
 function setSchemaTypeButtonsUI(active){
   const btns = [
@@ -502,13 +555,13 @@ function setSchemaTypeButtonsUI(active){
 }
 
 function setSchemaType(t){
-  if(!MAPS[t]) return; // segurança
+  if(!MAPS[t]) return; // safety
   CURRENT_SCHEMA_TYPE = t;
   setSchemaTypeButtonsUI(t);
   slog(`Schema Type: ${t}`, 'ok');
 }
 
-// Eventos dos botões
+// Buttons events
 const _btnArticle  = $('#sch-type-article');
 const _btnProducts = $('#sch-type-products');
 const _btnRecipes  = $('#sch-type-recipes');
@@ -516,8 +569,9 @@ const _btnRecipes  = $('#sch-type-recipes');
 if (_btnArticle)  _btnArticle.addEventListener('click',  ()=>setSchemaType('article'));
 if (_btnProducts) _btnProducts.addEventListener('click', ()=>setSchemaType('products'));
 if (_btnRecipes)  _btnRecipes.addEventListener('click',  ()=>setSchemaType('recipes'));
-// Estado inicial
+// Initial state
 setSchemaTypeButtonsUI(CURRENT_SCHEMA_TYPE);
+
 
 
 function applySchema(){
@@ -525,7 +579,7 @@ function applySchema(){
   const raw = $('#sch-json').value.trim();
   if (!raw) { slog('Nada para processar.','warn'); return; }
 
-  // 1) Se o conteúdo for um dump "items", apenas atualiza o mapa e sai
+  // 1) If content is an "items" dump, only update the map and exit
   try {
     const asObj = JSON.parse(raw);
     if (asObj && Array.isArray(asObj.items)) {
@@ -534,9 +588,9 @@ function applySchema(){
         return;
       }
     }
-  } catch { /* pode não ser JSON puro; seguimos */ }
+  } catch { /* may not be pure JSON; continue */ }
 
-  // 2) Tratar como JSON-LD (com ou sem <script>)
+  // 2) Treat as JSON-LD (with or without <script>)
   const jsonText = extractJsonText(raw);
   let data;
   try {
@@ -548,7 +602,7 @@ function applySchema(){
     return;
   }
 
-  // 3) Aplica o MAP do tipo selecionado; só reporta quando há valor e não aplicou no DOM
+  // 3) Apply the MAP of the selected type; only report when there is a value and it was not applied in the DOM
 const ACTIVE_MAP = MAPS[CURRENT_SCHEMA_TYPE] || [];
 const applied    = [];
 const missingDom = [];
@@ -558,11 +612,11 @@ ACTIVE_MAP.forEach(m => {
   const has = valRaw !== undefined && valRaw !== null && ('' + valRaw).trim?.() !== '';
   if (!has) return;
 
-  // arrays → 1 item por linha (ex.: recipeIngredient)
+  // arrays → 1 item per line (e.g., recipeIngredient)
   let val;
   if (Array.isArray(valRaw)) {
     const clean = s => String(s ?? '')
-      .replace(/^\s*[-•\d.)]+\s*/,'') // remove bullets/numeração comuns
+      .replace(/^\s*[-•\d.)]+\s*/,'') // remove common bullets/numbering
       .replace(/\s+/g,' ')
       .trim();
     val = valRaw.map(clean).filter(Boolean).join('\n');
@@ -575,11 +629,11 @@ ACTIVE_MAP.forEach(m => {
   else    missingDom.push({ m, val });
 });
 
-    // 4) Fallbacks/defaults específicos por tipo (não geram "faltando no JSON")
+    // 4) Type-specific fallbacks/defaults (do not generate “missing in JSON”)
 
   // ARTICLE
   if (CURRENT_SCHEMA_TYPE === 'article') {
-    // Fallback: schema_article_id ← @id || mainEntityOfPage.@id (se vazio)
+    // Fallback: schema_article_id ← @id || mainEntityOfPage.@id (if empty)
     const idName = 'metatags[schema_article][schema_article_id]';
     const idEl   = findElByAny({ name:idName, token:'schema_article_id' });
     if (idEl && !idEl.value) {
@@ -587,7 +641,7 @@ ACTIVE_MAP.forEach(m => {
       if (mid) setFieldByName(idName, mid, undefined, 'schema_article_id');
     }
 
-    // Fallback: schema_article_name ← name || headline (se vazio)
+    // Fallback: schema_article_name ← name || headline (if empty)
     const nameName = 'metatags[schema_article][schema_article_name]';
     const nameEl   = findElByAny({ name:nameName, token:'schema_article_name' });
     if (nameEl && !nameEl.value) {
@@ -595,7 +649,7 @@ ACTIVE_MAP.forEach(m => {
       if (nm) setFieldByName(nameName, nm, undefined, 'schema_article_name');
     }
 
-    // Defaults de selects
+    // Select defaults
     [
       { name:'metatags[schema_article][schema_article_type]',                  expect:'Article',      type:'select', token:'schema_article_type' },
       { name:'metatags[schema_article][schema_article_image][@type]',          expect:'ImageObject',  type:'select', token:'schema_article_image.@type' },
@@ -609,7 +663,7 @@ ACTIVE_MAP.forEach(m => {
 
   // PRODUCTS
   if (CURRENT_SCHEMA_TYPE === 'products') {
-    // image string → image.url (se o JSON tiver "image": "https://...")
+    // image string → image.url (if JSON has "image": "https://...")
     const imageStr = getByPath(data, 'image');
     const imgUrlName = 'metatags[schema_product][schema_product_image][url]';
     const imgUrlEl   = findElByAny({ name: imgUrlName, token: 'schema_product_image.url' });
@@ -617,7 +671,7 @@ ACTIVE_MAP.forEach(m => {
       setFieldByName(imgUrlName, imageStr.trim(), undefined, 'schema_product_image.url');
     }
 
-    // Defaults de selects
+    // Select defaults
     [
       { name:'metatags[schema_product][schema_product_image][@type]',           expect:'ImageObject',     type:'select', token:'schema_product_image.@type' },
       { name:'metatags[schema_product][schema_product_brand][@type]',           expect:'Organization',    type:'select', token:'schema_product_brand.@type' },
@@ -627,7 +681,7 @@ ACTIVE_MAP.forEach(m => {
       if (el && !el.value) setFieldByName(t.name, t.expect, t.type, t.token);
     });
 
-    // reviewCount → ratingCount (se vier assim no JSON)
+    // reviewCount → ratingCount (if it comes like this in JSON)
     const rc = getByPath(data, 'aggregateRating.reviewCount');
     const ratingCountName = 'metatags[schema_product][schema_product_aggregate_rating][ratingCount]';
     const ratingCountEl   = findElByAny({ name: ratingCountName, token:'schema_product_aggregate_rating.ratingCount' });
@@ -638,9 +692,9 @@ ACTIVE_MAP.forEach(m => {
 
   // RECIPES
   if (CURRENT_SCHEMA_TYPE === 'recipes') {
-    // recipeIngredient já vira string no loop (join '\n'), então só defaults aqui
+    // recipeIngredient already becomes a string in the loop (join '\n'), so only defaults here
 
-    // Defaults de selects (autor)
+    // Select defaults (author)
     [
       { name:'metatags[schema_recipe][schema_recipe_author][@type]', expect:'Person', type:'select', token:'schema_recipe_author.@type' },
       { name:'metatags[schema_recipe][schema_recipe_type]',          expect:'Recipe', type:'select', token:'schema_recipe_type' },
@@ -651,7 +705,7 @@ ACTIVE_MAP.forEach(m => {
   }
 
 
-  // 5) Resumo (sem "faltando no JSON")
+  // 5) Summary (no “missing in JSON”)
   if (applied.length) slog(`✅ Aplicados: ${applied.length}`, 'ok');
   if (missingDom.length) {
     slog(`⚠️ Não aplicado (campo não encontrado no DOM): ${missingDom.length}`, 'warn');
@@ -664,7 +718,34 @@ ACTIVE_MAP.forEach(m => {
 
 $('#sch-apply').onclick=applySchema;
 
-/* ===================== Tabs default ===================== */
+// Manual button: "Apply tokens (FamilyNes)"
+(function mountApplyTokensButton(){
+  const anchor = document.querySelector('#sch-apply'); // existing "Aplicar Schema" button
+  if (!anchor) { console.warn('Schema: base button not found to anchor "Aplicar tokens".'); return; }
+  if (document.getElementById('sch-apply-fn')) return; // already mounted
+
+  const btn = document.createElement('button');
+  btn.id = 'sch-apply-fn';
+  btn.type = 'button';
+  btn.textContent = 'Aplicar tokens (FamilyNes)';
+  // inherit anchor style (simple fallback)
+  btn.setAttribute('style', anchor.getAttribute('style') || 'padding:10px 14px;border:1px solid #444;border-radius:10px;background:#555;color:$eee;');
+  btn.style.marginLeft = '8px';
+  btn.title = 'Dica: Shift+Clique para FORÇAR (sobrescrever)';
+
+  btn.addEventListener('click', (ev) => {
+    if (!IS_FAMILYNES) { alert('Não é um domínio FamilyNes. Nada será aplicado.'); return; }
+    if ((CURRENT_SCHEMA_TYPE || '').toLowerCase() !== 'article') { alert('Selecione o tipo: Articles.'); return; }
+    // Shift+Click => force:true
+    const force = !!ev.shiftKey;
+    applyFamilyNesTokens({ force });
+  });
+
+  // place next to "Aplicar Schema"
+  anchor.insertAdjacentElement('afterend', btn);
+})();
+
+// Tabs default
 showFill();
 
 })();
