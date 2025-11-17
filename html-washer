@@ -56,6 +56,18 @@ wrap.querySelectorAll('div.paragraph-in-scc-markdown-text').forEach(div => {
   div.replaceWith(p);
 });
 
+// ====== Remover <strong>/<b>/<em> de dentro de headings ======
+wrap.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(h => {
+  // remove strong/b/em tags dentro do heading, preservando conteúdo
+  h.querySelectorAll('strong, b, em, i').forEach(tag => {
+    while (tag.firstChild) {
+      tag.parentNode.insertBefore(tag.firstChild, tag);
+    }
+    tag.remove();
+  });
+});
+
+
     let out = wrap.innerHTML;
 
     // Correções específicas anteriores
