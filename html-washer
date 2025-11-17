@@ -49,6 +49,13 @@
       }
     });
 
+    // ====== Converter DIVs de markdown SCC em <p> ======
+wrap.querySelectorAll('div.paragraph-in-scc-markdown-text').forEach(div => {
+  const p = document.createElement('p');
+  p.innerHTML = div.innerHTML;   // mantém links, strong, etc.
+  div.replaceWith(p);
+});
+
     let out = wrap.innerHTML;
 
     // Correções específicas anteriores
@@ -71,6 +78,52 @@
 
     // (D) Espaço fino antes de pontuação após tag inline
     out = out.replace(/<\/(strong|em|b|i|u)>\s+([:;!?])/g, "</$1>\u00A0$2");
+
+    // ====== Converter nós soltos em <p> ======
+(function normalizeLooseNodes(wrap){
+  const children = [...wrap.childNodes];
+
+  children.forEach(node => {
+    // IGNORAR nós já válidos
+    if (node.nodeType === 1 && ['P','UL','OL','LI','H1','H2','H3','H4','H5','H6','BLOCKQUOTE'].includes(node.tagName)) {
+      return;
+    }
+
+    // Ignorar comentários
+    if (node.nodeType === 8) return;
+
+    // Texto puro ou whitespace quebrado → virar <p>
+    if (node.nodeType === 3) {
+      const txt = node.textContent.trim();
+      if (txt.length) {
+        const p = document.createElement('p');
+        p.textContent = txt;
+        wrap.insertBefore(p, node);
+      }
+      wrap.removeChild(node);
+      return;
+    }
+
+    // DIV com texto direto → virar <p>
+    if (node.nodeType === 1 && node.tagName === 'DIV') {
+      const txt = node.textContent.trim();
+      if (txt.length) {
+        const p = document.createElement('p');
+        p.innerHTML = node.innerHTML;
+        wrap.insertBefore(p, node);
+      }
+      wrap.removeChild(node);
+      return;
+    }
+
+    // BR perdido → remover
+    if (node.nodeType === 1 && node.tagName === 'BR') {
+      node.remove();
+    }
+  });
+
+})(wrap);
+
 
     return out.trim();
   }
