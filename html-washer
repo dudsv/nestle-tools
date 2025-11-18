@@ -75,6 +75,7 @@ wrap.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(h => {
     out = out.replace(/<\/strong>\s*<strong>/gi, '');
     out = out.replace(/<strong>\s*:\s*<\/strong>/gi, '<strong>: </strong>');
     out = out.replace(/&nbsp;/g, ' ');
+    out = out.replace(/<p>\s*<\/p>/gi, '');
 
     // ====== Espaçamento apenas para tags inline ======
     const inline = '(a|strong|em|b|i|u|sup|sub|code|span)';
